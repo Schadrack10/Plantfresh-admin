@@ -7,7 +7,6 @@ import { Textarea } from "@/components/ui/textarea";
 import AppContext from "../context/AppContext";
 import UsefireFunctionsHook from "../utility/usefirebaseFuncHook";
 import { Checkbox } from "@/components/ui/checkbox";
-
 import { useToast } from "@/hooks/use-toast";
 
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -24,7 +23,9 @@ export default function Features() {
   // LOAD CONFIG IMMEDIATELY ON PAGE RELOAD
   useEffect(() => {
     const storedConfig = JSON.parse(localStorage.getItem("StoreConfig"));
-    const authenticatedUser = JSON.parse(localStorage.getItem("AuthenticatedUser"));
+    const authenticatedUser = JSON.parse(
+      localStorage.getItem("AuthenticatedUser")
+    );
 
     if (storedConfig || authenticatedUser) {
       setGlobalState((prev) => ({
@@ -55,7 +56,7 @@ export default function Features() {
   };
 
   // SAVE TO GLOBAL + FIREBASE
-  const handleSave = () => {  
+  const handleSave = () => {
     setGlobalState({
       ...globalState,
       StoreConfig: config,
@@ -63,7 +64,7 @@ export default function Features() {
 
     console.log("Saved config ++ ", config);
     localStorage.setItem("StoreConfig", JSON.stringify(config));
-    
+
     updateStoreConfig("StoreConfig001", config);
     toast({
       title: "Configuration Saved",
@@ -94,7 +95,7 @@ export default function Features() {
       </div>
 
       {/* ---------------- NAVBAR CUSTOMIZATION ---------------- */}
-      <Card>
+      <Card style={{ backgroundColor: "#f0f4f8" }}>
         <CardHeader>
           <CardTitle>Navbar Customization</CardTitle>
         </CardHeader>
@@ -104,14 +105,21 @@ export default function Features() {
             <Label>Logo URL</Label>
             <Input
               value={config.NavbarCustomization?.logoURL || ""}
-              onChange={(e) => handleChange("NavbarCustomization.logoURL", e.target.value)}
+              onChange={(e) =>
+                handleChange("NavbarCustomization.logoURL", e.target.value)
+              }
             />
           </div>
 
           {/* LOGO UPLOAD */}
           <div>
             <Label>Upload Logo</Label>
-            <Input disabled type="file" accept="image/*" onChange={handleLogoUpload} />
+            <Input
+              disabled
+              type="file"
+              accept="image/*"
+              onChange={handleLogoUpload}
+            />
 
             {config.NavbarCustomization?.logoURL && (
               <img
@@ -124,18 +132,22 @@ export default function Features() {
 
           {/* BACKGROUND COLOR */}
           <div>
-            <Label>Background Color: {config.NavbarCustomization?.background}</Label>
+            <Label>
+              Background Color: {config.NavbarCustomization?.background}
+            </Label>
             <Input
               type="color"
               value={config.NavbarCustomization?.background || ""}
-              onChange={(e) => handleChange("NavbarCustomization.background", e.target.value)}
+              onChange={(e) =>
+                handleChange("NavbarCustomization.background", e.target.value)
+              }
             />
           </div>
 
           {/* STICKY NAVBAR CHECKBOX */}
           <div className="flex items-start justify-between flex-col">
             <div>
-            <Label htmlFor="sticky-navbar">Sticky Navbar</Label>
+              <Label htmlFor="sticky-navbar">Sticky Navbar</Label>
             </div>
             <Checkbox
               id="sticky-navbar"
@@ -148,133 +160,17 @@ export default function Features() {
         </CardContent>
       </Card>
 
-      {/* ---------------- FOOTER CUSTOMIZATION ---------------- */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Footer Customization</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label>Background Color: {config.FooterCustomization?.backgroundColor}</Label>
-            <Input
-              type="color"
-              value={config.FooterCustomization?.backgroundColor || ""}
-              onChange={(e) =>
-                handleChange("FooterCustomization.backgroundColor", e.target.value)
-              }
-            />
-          </div>
-
-          <div>
-            <Label>Copyright Text</Label>
-            <Textarea
-              value={config.FooterCustomization?.copyrightText || ""}
-              onChange={(e) =>
-                handleChange("FooterCustomization.copyrightText", e.target.value)
-              }
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ---------------- CONTACT CUSTOMIZATION ---------------- */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Contact Customization</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label>Store Phone</Label>
-            <Input
-              value={config.ContactCustomization?.contactInfo?.phone || ""}
-              onChange={(e) =>
-                handleChange("ContactCustomization.contactInfo.phone", e.target.value)
-              }
-            />
-          </div>
-
-          <div>
-            <Label>Email</Label>
-            <Input
-              value={config.ContactCustomization?.contactInfo?.email || ""}
-              onChange={(e) =>
-                handleChange("ContactCustomization.contactInfo.email", e.target.value)
-              }
-            />
-          </div>
-
-          <div>
-            <Label>Address</Label>
-            <Textarea
-              value={config.ContactCustomization?.contactInfo?.Address || ""}
-              onChange={(e) =>
-                handleChange("ContactCustomization.contactInfo.Address", e.target.value)
-              }
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ---------------- SHOP CUSTOMIZATION ---------------- */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Shop Customization</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label>Shop Layout</Label>
-            <Input
-              value={config.ShopCustomization?.layout || ""}
-              onChange={(e) =>
-                handleChange("ShopCustomization.layout", e.target.value)
-              }
-            />
-          </div>
-
-          <div>
-            <Label>Items Per Page</Label>
-            <Input
-              type="number"
-              value={config.ShopCustomization?.itemsPerPage || 0}
-              onChange={(e) =>
-                handleChange("ShopCustomization.itemsPerPage", Number(e.target.value))
-              }
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* ---------------- CART CUSTOMIZATION ---------------- */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Cart Customization</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Allow Guest Checkout CHECKBOX */}
-          <div className="flex items-start justify-between flex-col">
-            <div>
-            <Label htmlFor="sticky-navbar">Allow Guest Checkout</Label>
-            </div>
-            <Checkbox
-              id="sticky-navbar"
-              checked={config.CartCustomization?.allowGuestCheckout || false}
-              onCheckedChange={(checked) =>
-                handleChange("CartCustomization.allowGuestCheckout",checked)
-              }
-            />
-          </div>
-        </CardContent>
-      </Card>
-
       {/* ---------------- THEME CUSTOMIZATION ---------------- */}
-      <Card>
+      <Card style={{ backgroundColor: "#f0f4f8" }}>
         <CardHeader>
           <CardTitle>Theme Customization</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* PRIMARY COLOR */}
           <div>
-            <Label>Primary Color: {config.ThemeCustomization?.primaryColor}</Label>
+            <Label>
+              Primary Color: {config.ThemeCustomization?.primaryColor}
+            </Label>
             <Input
               type="color"
               value={config.ThemeCustomization?.primaryColor || "#000000"}
@@ -306,8 +202,194 @@ export default function Features() {
         </CardContent>
       </Card>
 
+      {/* ---------------- CART CUSTOMIZATION ---------------- */}
+      <Card style={{ backgroundColor: "#f0f4f8" }}>
+        <CardHeader>
+          <CardTitle>Cart Customization</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label>Tax</Label>
+            <Input
+              value={config.CartCustomization?.TaxAmount || ""}
+              onChange={(e) =>
+                handleChange(
+                  "CartCustomization.TaxAmount",
+                  e.target.value
+                )
+              }
+            />
+          </div>
+
+          {/* Allow Guest Checkout CHECKBOX */}
+          <div className="flex items-start justify-between flex-col">
+            <div>
+              <Label htmlFor="sticky-navbar">Allow Guest Checkout</Label>
+            </div>
+            <Checkbox
+              id="sticky-navbar"
+              checked={config.CartCustomization?.allowGuestCheckout || false}
+              onCheckedChange={(checked) =>
+                handleChange("CartCustomization.allowGuestCheckout", checked)
+              }
+            />
+          </div>
+
+          {/* Allow Promotion Codes CHECKBOX */}
+          <div className="flex items-start justify-between flex-col">
+            <div>
+              <Label htmlFor="sticky-navbar">Allow Promotion Codes</Label>
+            </div>
+            <Checkbox
+              id="sticky-navbar"
+              checked={config.CartCustomization?.allowPromotionCodes || false}
+              onCheckedChange={(checked) =>
+                handleChange("CartCustomization.allowPromotionCodes", checked)
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ---------------- CHECKOUT CUSTOMIZATION ---------------- */}
+      <Card style={{ backgroundColor: "#f0f4f8" }}>
+        <CardHeader>
+          <CardTitle>Checkout Customization</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Enable Paystack CHECKBOX */}
+          <div className="flex items-start justify-between flex-col">
+            <div>
+              <Label htmlFor="sticky-navbar">Enable Paystack Payment</Label>
+            </div>
+            <Checkbox
+              id="sticky-navbar"
+              checked={config.CheckoutCustomization?.EnablePaystack || false}
+              onCheckedChange={(checked) =>
+                handleChange("CheckoutCustomization.EnablePaystack", checked)
+              }
+            />
+          </div>
+          {/* Enable Paypal CHECKBOX */}
+          <div className="flex items-start justify-between flex-col">
+            <div>
+              <Label htmlFor="sticky-navbar">Enable Paypal Payment</Label>
+            </div>
+            <Checkbox
+              id="sticky-navbar"
+              checked={config.CheckoutCustomization?.EnablePaypal || false}
+              onCheckedChange={(checked) =>
+                handleChange("CheckoutCustomization.EnablePaypal", checked)
+              }
+            />
+          </div>
+          {/* Enable Thirdparty payment CHECKBOX */}
+          <div className="flex items-start justify-between flex-col">
+            <div>
+              <Label htmlFor="sticky-navbar">Enable Third Party Payment</Label>
+            </div>
+            <Checkbox
+              id="sticky-navbar"
+              checked={
+                config.CheckoutCustomization?.EnableThirdPartyPayment || false
+              }
+              onCheckedChange={(checked) =>
+                handleChange(
+                  "CheckoutCustomization.EnableThirdPartyPayment",
+                  checked
+                )
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ---------------- CONTACT CUSTOMIZATION ---------------- */}
+      <Card style={{ backgroundColor: "#f0f4f8" }}>
+        <CardHeader>
+          <CardTitle>Contact Customization</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label>Phone</Label>
+            <Input
+              value={config.ContactCustomization?.contactInfo?.phone || ""}
+              onChange={(e) =>
+                handleChange(
+                  "ContactCustomization.contactInfo.phone",
+                  e.target.value
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <Label>Email</Label>
+            <Input
+              value={config.ContactCustomization?.contactInfo?.email || ""}
+              onChange={(e) =>
+                handleChange(
+                  "ContactCustomization.contactInfo.email",
+                  e.target.value
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <Label>Address</Label>
+            <Textarea
+              value={config.ContactCustomization?.contactInfo?.Address || ""}
+              onChange={(e) =>
+                handleChange(
+                  "ContactCustomization.contactInfo.Address",
+                  e.target.value
+                )
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ---------------- FOOTER CUSTOMIZATION ---------------- */}
+      <Card style={{ backgroundColor: "#f0f4f8" }}>
+        <CardHeader>
+          <CardTitle>Footer Customization</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label>
+              Background Color: {config.FooterCustomization?.backgroundColor}
+            </Label>
+            <Input
+              type="color"
+              value={config.FooterCustomization?.backgroundColor || ""}
+              onChange={(e) =>
+                handleChange(
+                  "FooterCustomization.backgroundColor",
+                  e.target.value
+                )
+              }
+            />
+          </div>
+
+          <div>
+            <Label>Copyright Text</Label>
+            <Textarea
+              value={config.FooterCustomization?.copyrightText || ""}
+              onChange={(e) =>
+                handleChange(
+                  "FooterCustomization.copyrightText",
+                  e.target.value
+                )
+              }
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ---------------- GENERAL SETTINGS ---------------- */}
-      <Card>
+      <Card style={{ backgroundColor: "#f0f4f8" }}>
         <CardHeader>
           <CardTitle>General Settings</CardTitle>
         </CardHeader>
@@ -316,7 +398,9 @@ export default function Features() {
             <Label>Store Name</Label>
             <Input
               value={config.GeneralSettings?.storeName || ""}
-              onChange={(e) => handleChange("GeneralSettings.storeName", e.target.value)}
+              onChange={(e) =>
+                handleChange("GeneralSettings.storeName", e.target.value)
+              }
             />
           </div>
 
@@ -326,7 +410,9 @@ export default function Features() {
             <select
               className="border rounded p-2 w-full mt-1"
               value={config.GeneralSettings?.currency || ""}
-              onChange={(e) => handleChange("GeneralSettings.currency", e.target.value)}
+              onChange={(e) =>
+                handleChange("GeneralSettings.currency", e.target.value)
+              }
             >
               <option value="">Select currency</option>
               <option value="ZAR">South African Rand (ZAR)</option>
@@ -341,6 +427,18 @@ export default function Features() {
               <option value="CAD">Canadian Dollar (CAD)</option>
               <option value="AUD">Australian Dollar (AUD)</option>
             </select>
+          </div>
+
+          {/* STOREID */}
+          <div>
+            <Label>Config ID</Label>
+            <Input
+              disabled
+              value={config.GeneralSettings?.configId || ""}
+              onChange={(e) =>
+                handleChange("GeneralSettings.storeName", e.target.value)
+              }
+            />
           </div>
         </CardContent>
       </Card>

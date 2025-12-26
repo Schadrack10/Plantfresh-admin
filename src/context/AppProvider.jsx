@@ -5,6 +5,7 @@ import AppContext from "./AppContext";
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 
 const AppContextProvider = ({ children }) => {
@@ -23,9 +24,10 @@ const AppContextProvider = ({ children }) => {
   const app = initializeApp(firebaseConfig);
   const analytics = getAnalytics(app);
   const db = getFirestore(app);
+  const storage = getStorage();
 
   return (
-    <AppContext.Provider value={{ globalState, setGlobalState , db , analytics }}>
+    <AppContext.Provider value={{ globalState, setGlobalState , db , analytics, storage , uploadBytes, ref, getDownloadURL}}>
       {children}
     </AppContext.Provider>
   );

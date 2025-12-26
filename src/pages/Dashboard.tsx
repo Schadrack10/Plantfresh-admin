@@ -14,6 +14,7 @@ const stats = [
 
 export default function Dashboard() {
   const { globalState, db , setGlobalState } = useContext(AppContext);
+  
 
   useEffect(() => {
     console.log("Global state storeConfig updated:", globalState);

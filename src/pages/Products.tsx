@@ -1,144 +1,375 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useState, useContext } from "react";
+import {
+  collection,
+  doc,
+  getDoc,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+} from "firebase/firestore";
+import * as XLSX from "xlsx";
+
 import { Input } from "@/components/ui/input";
+import AppContext from "../context/AppContext";
+import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Pencil, Trash2 } from "lucide-react";
-
-interface Product {
-  id: string;
-  name: string;
-  description: string;
-  price: string;
-  category: string;
-  imageUrl: string;
-  inStock: boolean;
-}
-
-const categories = ["Vegetables", "Fruits", "Herbs", "Exotic"];
+import UsefireFunctionsHook from "../utility/usefirebaseFuncHook";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { query, where, getDocs } from "firebase/firestore";
+import { Switch } from "@/components/ui/switch";
+import { useToast } from "@/hooks/use-toast";
+import { set } from "date-fns";
 
 export default function Products() {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentProduct, setCurrentProduct] = useState<Partial<Product>>({ inStock: true });
+  const [config, setConfig] = useState({
+    enableEditing: false,
+    enableDeletion: false,
+    enableBulkUpload: false,
+  });
 
-  const handleSave = () => {
-    if (currentProduct.id) {
-      setProducts(products.map((p) => (p.id === currentProduct.id ? currentProduct as Product : p)));
-    } else {
-      setProducts([...products, { ...currentProduct, id: Date.now().toString() } as Product]);
+  const [searchId, setSearchId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [product, setProduct] = useState(null);
+  const [bulkData, setBulkData] = useState([]);
+  const {
+    globalState,
+    setGlobalState,
+    db,
+    storage,
+    uploadBytes,
+    ref,
+    getDownloadURL,
+  } = useContext(AppContext);
+  const { toast } = useToast();
+  const { updateStoreConfig } = UsefireFunctionsHook();
+
+  // Search product
+  const searchProduct = async () => {
+    try {
+      setLoading(true);
+
+      const q = query(
+        collection(db, "Products"),
+        where("ProductID", "==", searchId)
+      );
+
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        // No product found
+        alert("No product found with that ProductID");
+        setProduct(null);
+        setLoading(false);
+        return;
+      }
+
+      // Found → extract the first matched document
+      const docSnap = querySnapshot.docs[0];
+      const data = docSnap.data();
+
+      setProduct({
+        id: docSnap.id,
+        ...data,
+      });
+
+      setLoading(false);
+    } catch (err) {
+      console.error("Error searching product:", err);
+      setLoading(false);
+      alert("An error occurred while searching.");
     }
-    setCurrentProduct({ inStock: true });
-    setIsEditing(false);
   };
 
-  const handleEdit = (product: Product) => {
-    setCurrentProduct(product);
-    setIsEditing(true);
+  // Update product
+  const updateProduct = async () => {
+    if (!product) return;
+    await updateDoc(doc(db, "products", product.id), product);
+    alert("Product updated");
   };
 
-  const handleDelete = (id: string) => {
-    setProducts(products.filter((p) => p.id !== id));
+  // Delete product
+  const deleteProductAction = async () => {
+    if (!product) return;
+    await deleteDoc(doc(db, "products", product.id));
+    setProduct(null);
+    alert("Product deleted");
   };
+
+  // Bulk upload handler
+  const handleBulkUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const data = await file.arrayBuffer();
+    const workbook = XLSX.read(data);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const json = XLSX.utils.sheet_to_json(sheet);
+
+    /*
+      Required spreadsheet columns:
+      - ProductId
+      - Description
+      - Nett
+      - Discount
+      - ImageURL
+    */
+
+    setBulkData(json);
+  };
+
+  // Upload bulk to Firestore
+  const uploadBulkToFirebase = async () => {
+    for (const item of bulkData) {
+      const ref = doc(db, "products", item.ProductId);
+      await setDoc(ref, {
+        Description: item.Description,
+        Nett: Number(item.Nett),
+        Discount: Number(item.Discount),
+        ImageURL: item.ImageURL,
+      });
+    }
+    alert("Bulk upload successful");
+  };
+
+  // Handle product image upload
+  const handleProductImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const fileRef = ref(storage, `products/${product.id}-${file.name}`);
+      await uploadBytes(fileRef, file);
+
+      const downloadURL = await getDownloadURL(fileRef);
+
+      // Update live preview and product state
+      setProduct((prev) => ({
+        ...prev,
+        ImageURL: downloadURL,
+      }));
+
+      alert("Image uploaded successfully!");
+    } catch (error) {
+      console.error("Image upload failed:", error);
+      alert("Failed to upload image.");
+    }
+  };
+
+  // Save featured products
+  const saveFeaturedProducts = async () => {
+    try {
+      const featuredIDs =
+        globalState.StoreConfig?.ProductsCustomization?.FeaturedProductIDs || [
+          "", "", "", ""
+        ];
+  
+      const updatedConfig = {
+        ...globalState.StoreConfig,
+        ProductsCustomization: {
+          ...globalState.StoreConfig.ProductsCustomization,
+          FeaturedProductIDs: featuredIDs,
+        },
+      };
+  
+      setGlobalState((prev) => ({
+        ...prev,
+        StoreConfig: updatedConfig,
+      }));
+  
+ 
+      // localStorage.setItem("StoreConfig", JSON.stringify(updatedConfig));
+  
+      // 4️⃣ Save to Firestore (same convention you used in handleSave)
+      // await updateStoreConfig("StoreConfig001", updatedConfig);
+  
+      console.log("Saved Featured Product IDs:", featuredIDs);
+      console.log("Updated StoreConfig after saving FeaturedProds:", updatedConfig);
+  
+    } catch (error) {
+      console.error("Error saving featured products:", error);
+  
+      toast({
+        title: "Error",
+        description: "Failed to save featured product IDs.",
+        variant: "destructive",
+      });
+    }
+  };
+  
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Products Management</h1>
-        <Button onClick={() => setIsEditing(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Add Product
-        </Button>
-      </div>
+    <div className="space-y-6 p-4">
+      {/* -------------------------------- */}
+      {/*        SEARCH PRODUCT            */}
+      {/* -------------------------------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Search Product</CardTitle>
+        </CardHeader>
 
-      {isEditing ? (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>{currentProduct.id ? "Edit Product" : "New Product"}</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="name">Product Name</Label>
-              <Input
-                id="name"
-                value={currentProduct.name || ""}
-                onChange={(e) => setCurrentProduct({ ...currentProduct, name: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="description">Description</Label>
-              <Textarea
-                id="description"
-                value={currentProduct.description || ""}
-                onChange={(e) => setCurrentProduct({ ...currentProduct, description: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="price">Price</Label>
-              <Input
-                id="price"
-                value={currentProduct.price || ""}
-                onChange={(e) => setCurrentProduct({ ...currentProduct, price: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label htmlFor="category">Category</Label>
-              <Select
-                value={currentProduct.category || ""}
-                onValueChange={(value) => setCurrentProduct({ ...currentProduct, category: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="imageUrl">Image URL</Label>
-              <Input
-                id="imageUrl"
-                value={currentProduct.imageUrl || ""}
-                onChange={(e) => setCurrentProduct({ ...currentProduct, imageUrl: e.target.value })}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button onClick={handleSave}>Save</Button>
-              <Button variant="outline" onClick={() => { setIsEditing(false); setCurrentProduct({ inStock: true }); }}>
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+        <CardContent className="space-y-4">
+          {/* Search Bar */}
+          <Input
+            placeholder="Enter ProductId"
+            value={searchId}
+            onChange={(e) => setSearchId(e.target.value)}
+          />
+          <Button disabled={searchId.length < 3} onClick={searchProduct}>
+            Search
+          </Button>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {products.map((product) => (
-          <Card key={product.id}>
-            <CardHeader>
-              <CardTitle className="text-lg">{product.name}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-2">{product.category}</p>
-              <p className="text-lg font-semibold mb-4">{product.price}</p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="outline" onClick={() => handleEdit(product)}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button size="sm" variant="destructive" onClick={() => handleDelete(product.id)}>
-                  <Trash2 className="h-4 w-4" />
+          {/* PRODUCT FOUND */}
+          {!loading && product && (
+            <div className="space-y-4 mt-4">
+              {/* IMAGE PREVIEW BOX */}
+              <div className="w-40 h-40 bg-gray-200 rounded-md flex items-center justify-center overflow-hidden">
+                {product.ImageURL ? (
+                  <img
+                    src={product.ImageURL}
+                    alt={product.Description}
+                    className="w-full h-full object-contain"
+                  />
+                ) : (
+                  <span className="text-gray-500 text-sm">No Image</span>
+                )}
+              </div>
+
+              {/* MANUAL IMAGE URL INPUT */}
+              <div className="space-y-1">
+                <Label>Image URL</Label>
+                <Input
+                  value={product.ImageURL}
+                  onChange={(e) =>
+                    setProduct({ ...product, ImageURL: e.target.value })
+                  }
+                />
+              </div>
+
+              {/* UPLOAD NEW PRODUCT IMAGE */}
+              <div className="space-y-1">
+                <Label>Upload New Image</Label>
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleProductImageUpload}
+                />
+              </div>
+
+              {/* DESCRIPTION */}
+              <div>
+                <Label>Description</Label>
+                <Input
+                  value={product.Description}
+                  onChange={(e) =>
+                    setProduct({ ...product, Description: e.target.value })
+                  }
+                />
+              </div>
+
+              {/* NETT */}
+              <div>
+                <Label>Nett</Label>
+                <Input
+                  type="number"
+                  value={product.Nett}
+                  onChange={(e) =>
+                    setProduct({ ...product, Nett: Number(e.target.value) })
+                  }
+                />
+              </div>
+
+              {/* DISCOUNT */}
+              <div>
+                <Label>Discount</Label>
+                <Input
+                  type="number"
+                  value={product.Discount}
+                  onChange={(e) =>
+                    setProduct({ ...product, Discount: Number(e.target.value) })
+                  }
+                />
+              </div>
+
+              {/* ACTION BUTTONS */}
+              <div className="flex space-x-4">
+                <Button onClick={updateProduct}>Save Changes</Button>
+                <Button variant="destructive" onClick={deleteProductAction}>
+                  Delete Product
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            </div>
+          )}
+
+          {loading && <div>Searching ...</div>}
+        </CardContent>
+      </Card>
+
+      {/* -------------------------------- */}
+      {/*        BULK UPLOAD              */}
+      {/* -------------------------------- */}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Bulk Product Upload</CardTitle>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          <Input type="file" accept=".xlsx,.csv" onChange={handleBulkUpload} />
+
+          {bulkData.length > 0 && (
+            <Button onClick={uploadBulkToFirebase}>
+              Upload {bulkData.length} Products to Firebase
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* -------------------------------- */}
+      {/*        PRODUCT AD CARD           */}
+      {/* -------------------------------- */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Featured Best Seller Products</CardTitle>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          {/* Map through 4 indexes */}
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index}>
+              <Label>Product ID #{index + 1}</Label>
+              <Input
+                placeholder={`Enter ProductID for slot ${index + 1}`}
+                value={
+                  globalState.StoreConfig?.ProductsCustomization
+                    ?.FeaturedProductIDs?.[index] || ""
+                }
+                onChange={(e) => {
+                  const newIDs = [
+                    ...(globalState.StoreConfig?.ProductsCustomization
+                      ?.FeaturedProductIDs || ["", "", "", ""]),
+                  ];
+                  newIDs[index] = e.target.value;
+
+                  setGlobalState((prev) => ({
+                    ...prev,
+                    StoreConfig: {
+                      ...prev.StoreConfig,
+                      ProductsCustomization: {
+                        ...prev.StoreConfig.ProductsCustomization,
+                        FeaturedProductIDs: newIDs,
+                      },
+                    },
+                  }));
+                }}
+              />
+            </div>
+          ))}
+
+          <Button onClick={saveFeaturedProducts}>
+            Save Featured Product IDs
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

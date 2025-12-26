@@ -2,10 +2,12 @@ import React from 'react'
 import { useState, useContext } from "react";
 import { doc, setDoc, getDoc, updateDoc } from "firebase/firestore";
 import AppContext from '../context/AppContext';
+import { useToast } from "@/hooks/use-toast";
 
 const UsefireFunctionsHook = () => {
 
   const { globalState,setGlobalState, db} = useContext(AppContext);
+  const { toast } = useToast();
   const storeConfigsTemplate = {
   NavbarCustomization: {
     logoURL: '',
@@ -213,9 +215,12 @@ const UsefireFunctionsHook = () => {
         ...updates,
         updatedAt: new Date().toISOString()
       });
-      
-      console.log(`✅ Store config updated successfully for: ${configID}`);
-      return { success: true, configID };
+
+      toast({
+        title: "Configuration Saved",
+        description: `✅ Store config updated successfully`,
+      });
+
     } catch (error) {
       console.error("❌ Error updating store config:", error);
       throw error;
