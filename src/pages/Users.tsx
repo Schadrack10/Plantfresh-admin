@@ -143,7 +143,7 @@ export default function Users() {
         </Button>
       </div>
 
-      <Card>
+      <Card style={{ backgroundColor: "#f0f4f8" }}>
         <CardHeader>
           <CardTitle style={{ fontSize: "16px" }}>All Users</CardTitle>
         </CardHeader>
@@ -164,7 +164,7 @@ export default function Users() {
               <tbody>
                 {users.map((user) => (
                   <tr
-                    style={{ fontSize: "14px" }}
+                    style={{ fontSize: "14px" , border:"1px solid rgb(207, 216, 221)"}}
                     key={user.id}
                     className="border-b"
                   >
@@ -177,7 +177,7 @@ export default function Users() {
 
                     <td className="p-3 text-right space-x-2">
                       <Button
-                        variant="secondary"
+                        variant="outline"
                         onClick={() => handleOpenEdit(user)}
                       >
                         Edit
