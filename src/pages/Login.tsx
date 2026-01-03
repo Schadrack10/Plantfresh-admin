@@ -62,32 +62,71 @@ export default function Login() {
       });
     }
   };
-  const getUserRecordFromCollection = async (user: Record<string,any>) => {
-    const q = query(collection(db, "Users"), where("IsAdmin", "==", true));
-    const querySnapshot = await getDocs(q);
 
-    querySnapshot.forEach((doc) => {
-      console.log(doc.id, " => ", doc.data());
-
-      // find the user with matching email
-      if (user.email === doc.data().Email) {
-        localStorage.setItem("IsAuthenticated", "true");
-        localStorage.setItem("AuthenticatedUser", JSON.stringify(user.providerData[0]));
-
-        console.log("Logged in user:", user);
-        setGlobalState({
-          ...globalState,
-          AuthenticatedUser: user,
-        });
-        navigate("/");
-        toast({
-          title: "Login successful",
-          description: "Welcome to the PlantFresh Admin Panel!",
-        });
+  const getUserRecordFromCollection = async (user: Record<string, any>) => {
+    try {
+      const q = query(collection(db, "Users"), where("IsAdmin", "==", true));
+      const querySnapshot = await getDocs(q);
+  
+      if (querySnapshot.empty) {
         setLoading(false);
+        toast({
+          title: "Access denied",
+          description: "User does not have admin privileges.",
+          variant: "destructive",
+        });
+        return;
       }
-    });
+  
+      let isAdmin = false;
+  
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (user.email === data.Email) {
+          isAdmin = true;
+        }
+      });
+  
+      if (!isAdmin) {
+        setLoading(false);
+        toast({
+          title: "Access denied",
+          description: "You do not have admin privileges.",
+          variant: "destructive",
+        });
+        return;
+      }
+  
+      // ✅ Admin found
+      localStorage.setItem("IsAuthenticated", "true");
+      localStorage.setItem(
+        "AuthenticatedUser",
+        JSON.stringify(user.providerData[0])
+      );
+  
+      setGlobalState({
+        ...globalState,
+        AuthenticatedUser: user,
+      });
+  
+      navigate("/");
+      toast({
+        title: "Login successful",
+        description: "Welcome to the PlantFresh Admin Panel!",
+      });
+  
+      setLoading(false);
+    } catch (error) {
+      console.error("Error checking admin access:", error);
+      setLoading(false);
+      toast({
+        title: "Error",
+        description: "Unable to verify admin credentials.",
+        variant: "destructive",
+      });
+    }
   };
+  
   const getConfigRecordFromCollection = async (configId: string) => {
     try {
       const config = await getStoreConfig(configId);

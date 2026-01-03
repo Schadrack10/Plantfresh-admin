@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AdminLayout } from "./components/AdminLayout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
+import Users from "./pages/Users";
 import HeroBanner from "./pages/HeroBanner";
 import Products from "./pages/Products";
 import Features from "./pages/Features";
@@ -29,6 +30,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/users" element={<Users />} />
             <Route path="/hero" element={<HeroBanner />} />
             <Route path="/products" element={<Products />} />
             <Route path="/features" element={<Features />} />
