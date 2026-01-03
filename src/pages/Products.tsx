@@ -4,6 +4,7 @@ import {
   doc,
   getDoc,
   setDoc,
+  addDoc,
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
@@ -66,7 +67,7 @@ export default function Products() {
       // Found → extract the first matched document
       const docSnap = querySnapshot.docs[0];
       const data = docSnap.data();
-
+      console.log("Product found>>>>>>>>>>>, ", data)
       setProduct({
         id: docSnap.id,
         ...data,
@@ -83,14 +84,14 @@ export default function Products() {
   // Update product
   const updateProduct = async () => {
     if (!product) return;
-    await updateDoc(doc(db, "products", product.id), product);
+    await updateDoc(doc(db, "Products", product.ProductID), product);
     alert("Product updated");
   };
 
   // Delete product
   const deleteProductAction = async () => {
     if (!product) return;
-    await deleteDoc(doc(db, "products", product.id));
+    await deleteDoc(doc(db, "Products", product.ProductID));
     setProduct(null);
     alert("Product deleted");
   };
@@ -107,29 +108,46 @@ export default function Products() {
 
     /*
       Required spreadsheet columns:
-      - ProductId
+      - ProductID
+      -ProductTitle
       - Description
-      - Nett
+      - Gross
+      - Net
       - Discount
-      - ImageURL
+      - ImgBigUrl
+      -ImgSmallUrl
+      - Status
+      - Stock
     */
 
     setBulkData(json);
   };
 
   // Upload bulk to Firestore
-  const uploadBulkToFirebase = async () => {
-    for (const item of bulkData) {
-      const ref = doc(db, "products", item.ProductId);
-      await setDoc(ref, {
-        Description: item.Description,
-        Nett: Number(item.Nett),
-        Discount: Number(item.Discount),
-        ImageURL: item.ImageURL,
-      });
-    }
-    alert("Bulk upload successful");
-  };
+ 
+const uploadBulkToFirebase = async () => {
+  const Ref = collection(db, "Products");
+
+  for (const item of bulkData) {
+    await addDoc(Ref, {
+      Description: item.Description,
+      Gross: Number(item.Gross),
+      ProductTitle: item.ProductTitle,
+      Net: Number(item.Net),
+      Discount: Number(item.Discount),
+      ImgBigUrl: item.ImgBigUrl,
+      ImgSmallUrl: item.ImgSmallUrl,
+      Status: item.Status,
+      Stock: item.Stock,
+      Category: item.Category,
+      ProductID: item.ProductID,
+      Tags: item.Tags,
+      createdAt: new Date(),
+    });
+  }
+
+  alert("Bulk upload successful");
+};
 
   // Handle product image upload
   const handleProductImageUpload = async (e) => {
@@ -145,7 +163,7 @@ export default function Products() {
       // Update live preview and product state
       setProduct((prev) => ({
         ...prev,
-        ImageURL: downloadURL,
+        ImgBigUrl: downloadURL,
       }));
 
       alert("Image uploaded successfully!");
@@ -223,9 +241,9 @@ export default function Products() {
             <div className="space-y-4 mt-4">
               {/* IMAGE PREVIEW BOX */}
               <div className="w-40 h-40 bg-gray-200 rounded-md flex items-center justify-center overflow-hidden">
-                {product.ImageURL ? (
+                {product.ImgBigUrl ? (
                   <img
-                    src={product.ImageURL}
+                    src={product.ImgBigUrl}
                     alt={product.Description}
                     className="w-full h-full object-contain"
                   />
@@ -234,13 +252,24 @@ export default function Products() {
                 )}
               </div>
 
-              {/* MANUAL IMAGE URL INPUT */}
+              {/* MANUAL BIG IMAGE URL INPUT */}
               <div className="space-y-1">
-                <Label>Image URL</Label>
+                <Label>Big Image URL</Label>
                 <Input
-                  value={product.ImageURL}
+                  value={product.ImgBigUrl}
                   onChange={(e) =>
-                    setProduct({ ...product, ImageURL: e.target.value })
+                    setProduct({ ...product, ImgBigUrl: e.target.value })
+                  }
+                />
+              </div>
+
+              {/* MANUAL SMALL IMAGE URL INPUT */}
+              <div className="space-y-1">
+                <Label>Small Image URL</Label>
+                <Input
+                  value={product.ImgSmallUrl}
+                  onChange={(e) =>
+                    setProduct({ ...product, ImgSmallUrl: e.target.value })
                   }
                 />
               </div>
@@ -252,6 +281,27 @@ export default function Products() {
                   type="file"
                   accept="image/*"
                   onChange={handleProductImageUpload}
+                />
+              </div>
+              {/* PRODUCT TITLE */}
+              <div>
+                <Label>Product Title</Label>
+                <Input
+                  value={product.ProductTitle}
+                  onChange={(e) =>
+                    setProduct({ ...product, ProductTitle: e.target.value })
+                  }
+                />
+              </div>
+
+                    {/* CATEGORY */}
+              <div>
+                <Label>Category</Label>
+                <Input
+                  value={product.Category}
+                  onChange={(e) =>
+                    setProduct({ ...product, Category: e.target.value })
+                  }
                 />
               </div>
 
@@ -266,19 +316,7 @@ export default function Products() {
                 />
               </div>
 
-              {/* NETT */}
-              <div>
-                <Label>Nett</Label>
-                <Input
-                  type="number"
-                  value={product.Nett}
-                  onChange={(e) =>
-                    setProduct({ ...product, Nett: Number(e.target.value) })
-                  }
-                />
-              </div>
-
-              {/* DISCOUNT */}
+                {/* DISCOUNT */}
               <div>
                 <Label>Discount</Label>
                 <Input
@@ -286,6 +324,53 @@ export default function Products() {
                   value={product.Discount}
                   onChange={(e) =>
                     setProduct({ ...product, Discount: Number(e.target.value) })
+                  }
+                />
+              </div>
+
+              {/* GROSS */}
+              <div>
+                <Label>Gross</Label>
+                <Input
+                  type="number"
+                  value={product.Gross}
+                  onChange={(e) =>
+                    setProduct({ ...product, Gross: Number(e.target.value) })
+                  }
+                />
+              </div>
+
+              {/* NET */}
+              <div>
+                <Label>Net</Label>
+                <Input
+                  type="number"
+                  value={product.Net}
+                  onChange={(e) =>
+                    setProduct({ ...product, Net: Number(e.target.value) })
+                  }
+                />
+              </div>
+
+                  {/* STOCK */}
+              <div>
+                <Label>Stock</Label>
+                <Input
+                  type="number"
+                  value={product.Stock}
+                  onChange={(e) =>
+                    setProduct({ ...product, Stock: Numbet(e.target.value) })
+                  }
+                />
+              </div>
+
+              {/* Status */}
+              <div>
+                <Label>Status</Label>
+                <Input
+                  value={product.Status}
+                  onChange={(e) =>
+                    setProduct({ ...product, Status: e.target.value })
                   }
                 />
               </div>

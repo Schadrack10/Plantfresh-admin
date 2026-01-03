@@ -180,6 +180,20 @@ export default function Features() {
             />
           </div>
 
+          {/* SECONDARY COLOR */}
+          <div>
+            <Label>
+              Secondary Color: {config.ThemeCustomization?.secondaryColor}
+            </Label>
+            <Input
+              type="color"
+              value={config.ThemeCustomization?.secondaryColor || "#000000"}
+              onChange={(e) =>
+                handleChange("ThemeCustomization.secondaryColor", e.target.value)
+              }
+            />
+          </div>
+
           {/* FONT FAMILY */}
           <div>
             <Label>Font Family</Label>
