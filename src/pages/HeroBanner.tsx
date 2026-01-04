@@ -298,19 +298,22 @@ useEffect(() => {
 }, [activeTab]);
 
   // Get background style for static banners
-  const getBannerBackgroundStyle = (banner: any) => {
-    if (!banner) return {};
-    
-    if (banner.gradientEnabled) {
-      return {
-        background: `linear-gradient(${banner.gradientDirection}, ${banner.gradientColor1}, ${banner.gradientColor2})`,
-      };
-    }
-    
+const getBannerBackgroundStyle = (banner: any) => {
+  if (!banner) return {};
+
+  if (banner.gradientEnabled) {
     return {
-      backgroundColor: banner.backgroundColor,
+      backgroundImage: `linear-gradient(${banner.gradientDirection || "to right"}, 
+        ${banner.gradientColor1 || "#10b981"}, 
+        ${banner.gradientColor2 || "#06b6d4"})`,
     };
+  }
+
+  return {
+    backgroundColor: banner.backgroundColor || "#10b981",
   };
+};
+
 
   // Get gradient direction options
   const gradientDirections = [
