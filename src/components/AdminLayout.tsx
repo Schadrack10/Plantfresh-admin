@@ -20,7 +20,6 @@ const menuItems = [
   { title: "Hero Banner", url: "/hero", icon: Image },
   { title: "Products", url: "/products", icon: Package },
   { title: "Features", url: "/features", icon: Star },
-  { title: "Testimonials", url: "/testimonials", icon: MessageSquare },
   { title: "Blog Posts", url: "/blog", icon: FileText },
 ];
 
