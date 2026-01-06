@@ -43,7 +43,8 @@ export default function Users() {
   });
 
   useEffect(() => {
-    fetchUsers();
+    const UsersList = JSON.parse(localStorage.getItem("UsersList")) ?? [];
+    setUsers(UsersList);
   }, []);
 
   const fetchUsers = async () => {
@@ -56,7 +57,7 @@ export default function Users() {
         id: d.id,
         ...d.data(),
       }));
-
+      localStorage.setItem("UsersList", JSON.stringify(list));
       setUsers(list);
     } catch (err) {
       console.error(err);
