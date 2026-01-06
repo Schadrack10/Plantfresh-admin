@@ -32,7 +32,6 @@ export default function Blog() {
   const [currentPost, setCurrentPost] = useState<Partial<BlogPost>>({});
   const [isLoading, setIsLoading] = useState(true);
 
-  // FETCH BLOG POSTS ON MOUNT
   useEffect(() => {
     loadBlogPosts();
   }, []);
@@ -66,7 +65,6 @@ export default function Blog() {
       }
 
       if (currentPost.id) {
-        // UPDATE EXISTING POST
         await updateBlogPost(currentPost.id, currentPost as BlogPost);
         setPosts(posts.map((p) => (p.id === currentPost.id ? currentPost as BlogPost : p)));
         toast({
@@ -74,7 +72,6 @@ export default function Blog() {
           description: "Blog post has been updated successfully.",
         });
       } else {
-        // CREATE NEW POST
         const newPost = {
           ...currentPost,
           id: Date.now().toString(),
@@ -161,10 +158,10 @@ export default function Blog() {
   }
 
   return (
-    <div>
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold">Blog Posts Management</h1>
-        <Button onClick={() => setIsEditing(true)}>
+    <div className="p-4 md:p-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl md:text-3xl font-bold">Blog Posts Management</h1>
+        <Button onClick={() => setIsEditing(true)} className="w-full sm:w-auto">
           <Plus className="mr-2 h-4 w-4" /> Add Post
         </Button>
       </div>
@@ -253,14 +250,15 @@ export default function Blog() {
               )}
             </div>
 
-            <div className="flex gap-2 pt-4">
-              <Button onClick={handleSave}>Save Post</Button>
+            <div className="flex flex-col sm:flex-row gap-2 pt-4">
+              <Button onClick={handleSave} className="w-full sm:w-auto">Save Post</Button>
               <Button 
                 variant="outline" 
                 onClick={() => { 
                   setIsEditing(false); 
                   setCurrentPost({}); 
                 }}
+                className="w-full sm:w-auto"
               >
                 Cancel
               </Button>
@@ -276,31 +274,76 @@ export default function Blog() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
           {posts.map((post) => (
-            <Card key={post.id} style={{ backgroundColor: "#f0f4f8" }}>
-              {post.imageUrl && (
-                <img
-                  src={post.imageUrl}
-                  alt={post.title}
-                  className="w-full h-48 object-cover rounded-t-lg"
-                />
-              )}
-              <CardHeader>
-                <CardTitle className="text-lg">{post.title}</CardTitle>
+            <Card
+              key={post.id}
+              className="flex flex-col bg-[#f0f4f8] overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-2 cursor-pointer"
+            >
+              {/* IMAGE - Fixed height with object-fit */}
+              <div className="w-full h-48 bg-gradient-to-br from-gray-300 to-gray-400 flex-shrink-0 flex items-center justify-center">
+                {post.imageUrl ? (
+                  <img
+                    src={post.imageUrl}
+                    alt={post.title || "Blog image"}
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <div className="text-gray-500 text-center px-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-sm font-medium">No Image</p>
+                  </div>
+                )}
+              </div>
+
+              {/* HEADER - Fixed height for title */}
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg line-clamp-2 min-h-[3.5rem]">
+                  {post.title || "Untitled Post"}
+                </CardTitle>
               </CardHeader>
-              <CardContent>
+
+              {/* CONTENT - Grows to fill space */}
+              <CardContent className="flex flex-col flex-1 pt-0">
                 <p className="text-sm text-muted-foreground mb-1">
-                  {post.category} • {new Date(post.date).toLocaleDateString()}
+                  {post.category || "Uncategorized"} •{" "}
+                  {post.date
+                    ? new Date(post.date).toLocaleDateString()
+                    : "No date"}
                 </p>
-                <p className="text-sm text-muted-foreground mb-1">By {post.author}</p>
-                <p className="text-sm mb-4 line-clamp-2">{post.excerpt}</p>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => handleEdit(post)}>
-                    <Pencil className="h-4 w-4" />
+
+                <p className="text-sm text-muted-foreground mb-3">
+                  By {post.author || "Unknown Author"}
+                </p>
+
+                <p className="text-sm mb-4 line-clamp-3 flex-1">
+                  {post.excerpt || "No excerpt available."}
+                </p>
+
+                {/* ACTIONS - Always at bottom */}
+                <div className="mt-auto flex gap-2 pt-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleEdit(post)}
+                    className="flex-1"
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">Edit</span>
                   </Button>
-                  <Button size="sm" variant="destructive" onClick={() => handleDelete(post.id)}>
-                    <Trash2 className="h-4 w-4" />
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => handleDelete(post.id)}
+                    className="flex-1"
+                  >
+                    <Trash2 className="h-4 w-4 mr-1" />
+                    <span className="hidden sm:inline">Delete</span>
                   </Button>
                 </div>
               </CardContent>
