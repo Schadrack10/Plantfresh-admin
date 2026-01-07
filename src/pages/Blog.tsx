@@ -293,7 +293,7 @@ export default function Blog() {
           {posts.map((post) => (
             <Card
               key={post.id}
-              className="flex flex-col bg-[#f0f4f8] overflow-hidden transition-all duration-300 hover:shadow-xl hover:-translate-y-2 cursor-pointer"
+              className="flex flex-col bg-[#f0f4f8] overflow-hidden transition-all duration-300 hover:shadow-xlkn"
             >
               {/* IMAGE - Fixed height with object-fit */}
               <div className="w-full h-48 bg-gradient-to-br from-gray-300 to-gray-400 flex-shrink-0 flex items-center justify-center">
