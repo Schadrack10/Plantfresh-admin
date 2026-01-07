@@ -65,21 +65,34 @@ export default function Blog() {
       }
 
       if (currentPost.id) {
-        await updateBlogPost(currentPost.id, currentPost as BlogPost);
-        setPosts(posts.map((p) => (p.id === currentPost.id ? currentPost as BlogPost : p)));
+        // UPDATE EXISTING POST - Use the Firestore document ID
+        const updatedPost = {
+          ...currentPost,
+          date: currentPost.date || new Date().toISOString(),
+        } as BlogPost;
+        
+        await updateBlogPost(currentPost.id, updatedPost);
+        setPosts(posts.map((p) => (p.id === currentPost.id ? updatedPost : p)));
         toast({
           title: "Post Updated",
           description: "Blog post has been updated successfully.",
         });
       } else {
-        const newPost = {
-          ...currentPost,
-          id: Date.now().toString(),
+        // CREATE NEW POST - Let Firestore generate the ID
+        const newPostData = {
+          title: currentPost.title,
+          excerpt: currentPost.excerpt || "",
+          content: currentPost.content,
+          author: currentPost.author || "Admin",
           date: new Date().toISOString(),
-        } as BlogPost;
+          imageUrl: currentPost.imageUrl || "",
+          category: currentPost.category || "Uncategorized",
+        };
         
-        await createBlogPost(newPost);
-        setPosts([...posts, newPost]);
+        // createBlogPost returns { id, ...blogPost }
+        const newPost = await createBlogPost(newPostData);
+        
+        setPosts([newPost, ...posts]);
         toast({
           title: "Post Created",
           description: "New blog post has been created successfully.",
@@ -251,7 +264,9 @@ export default function Blog() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-2 pt-4">
-              <Button onClick={handleSave} className="w-full sm:w-auto">Save Post</Button>
+              <Button onClick={handleSave} className="w-full sm:w-auto">
+                {currentPost.id ? "Update Post" : "Save Post"}
+              </Button>
               <Button 
                 variant="outline" 
                 onClick={() => { 
