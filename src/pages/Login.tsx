@@ -82,7 +82,7 @@ export default function Login() {
   
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        if (user.email === data.Email) {
+        if (user.email === data.UserID) {
           isAdmin = true;
         }
       });

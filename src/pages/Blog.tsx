@@ -23,7 +23,7 @@ interface BlogPost {
 
 export default function Blog() {
   const { globalState } = useContext(AppContext);
-  const { createBlogPost, updateBlogPost, deleteBlogPost, fetchAllBlogs } = UsefireFunctionsHook();
+  const { fetchStoreConfig, updateStoreConfig } = UsefireFunctionsHook();
   const { toast } = useToast();
   const storage = getStorage();
 
@@ -32,6 +32,9 @@ export default function Blog() {
   const [currentPost, setCurrentPost] = useState<Partial<BlogPost>>({});
   const [isLoading, setIsLoading] = useState(true);
 
+  // Reference to StoreConfig document
+  const STORE_CONFIG_ID = "StoreConfig001";
+
   useEffect(() => {
     loadBlogPosts();
   }, []);
@@ -39,8 +42,15 @@ export default function Blog() {
   const loadBlogPosts = async () => {
     try {
       setIsLoading(true);
-      const blogPosts = await fetchAllBlogs();
-      setPosts(blogPosts || []);
+      const storeConfig = await fetchStoreConfig(STORE_CONFIG_ID);
+      const posts = storeConfig?.BlogCustomization?.posts || [];
+      
+      // Sort by date descending (newest first)
+      const sortedPosts = posts.sort((a: BlogPost, b: BlogPost) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      setPosts(sortedPosts);
+      console.log(`✅ Loaded ${posts.length} blog posts from StoreConfig`);
     } catch (error) {
       console.error("Error loading blog posts:", error);
       toast({
@@ -65,21 +75,29 @@ export default function Blog() {
       }
 
       if (currentPost.id) {
-        // UPDATE EXISTING POST - Use the Firestore document ID
+        // UPDATE EXISTING POST
         const updatedPost = {
           ...currentPost,
           date: currentPost.date || new Date().toISOString(),
         } as BlogPost;
-        
-        await updateBlogPost(currentPost.id, updatedPost);
-        setPosts(posts.map((p) => (p.id === currentPost.id ? updatedPost : p)));
+
+        const updatedPosts = posts.map((p) =>
+          p.id === currentPost.id ? updatedPost : p
+        );
+
+        await updateStoreConfig(STORE_CONFIG_ID, {
+          "BlogCustomization.posts": updatedPosts,
+        });
+
+        setPosts(updatedPosts);
         toast({
           title: "Post Updated",
           description: "Blog post has been updated successfully.",
         });
       } else {
-        // CREATE NEW POST - Let Firestore generate the ID
-        const newPostData = {
+        // CREATE NEW POST
+        const newPost: BlogPost = {
+          id: `post_${Date.now()}`,
           title: currentPost.title,
           excerpt: currentPost.excerpt || "",
           content: currentPost.content,
@@ -88,11 +106,14 @@ export default function Blog() {
           imageUrl: currentPost.imageUrl || "",
           category: currentPost.category || "Uncategorized",
         };
-        
-        // createBlogPost returns { id, ...blogPost }
-        const newPost = await createBlogPost(newPostData);
-        
-        setPosts([newPost, ...posts]);
+
+        const updatedPosts = [newPost, ...posts];
+
+        await updateStoreConfig(STORE_CONFIG_ID, {
+          "BlogCustomization.posts": updatedPosts,
+        });
+
+        setPosts(updatedPosts);
         toast({
           title: "Post Created",
           description: "New blog post has been created successfully.",
@@ -120,8 +141,13 @@ export default function Blog() {
     if (!confirm("Are you sure you want to delete this post?")) return;
 
     try {
-      await deleteBlogPost(id);
-      setPosts(posts.filter((p) => p.id !== id));
+      const updatedPosts = posts.filter((p) => p.id !== id);
+
+      await updateStoreConfig(STORE_CONFIG_ID, {
+        "BlogCustomization.posts": updatedPosts,
+      });
+
+      setPosts(updatedPosts);
       toast({
         title: "Post Deleted",
         description: "Blog post has been deleted successfully.",
@@ -293,7 +319,7 @@ export default function Blog() {
           {posts.map((post) => (
             <Card
               key={post.id}
-              className="flex flex-col bg-[#f0f4f8] overflow-hidden transition-all duration-300 hover:shadow-xlkn"
+              className="flex flex-col bg-[#f0f4f8] overflow-hidden transition-all duration-300 hover:shadow-xl"
             >
               {/* IMAGE - Fixed height with object-fit */}
               <div className="w-full h-48 bg-gradient-to-br from-gray-300 to-gray-400 flex-shrink-0 flex items-center justify-center">

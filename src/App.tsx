@@ -13,6 +13,7 @@ import Features from "./pages/Features";
 import Blog from "./pages/Blog";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import Affiliation from "./pages/Affiliation";
 import AppContextProvider from "./context/AppProvider";
 
 const queryClient = new QueryClient();
@@ -33,6 +34,7 @@ const App = () => (
             <Route path="/products" element={<Products />} />
             <Route path="/features" element={<Features />} />
             <Route path="/blog" element={<Blog />} />
+            <Route path="/affiliation" element={<Affiliation />} />
           </Route>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />

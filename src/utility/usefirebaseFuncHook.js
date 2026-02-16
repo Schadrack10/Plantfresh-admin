@@ -128,6 +128,7 @@ const UsefireFunctionsHook = () => {
     BlogCustomization: {
       enableComments: true,
       postsPerPage: 10,
+      posts: [], // Added posts array for blog posts
     },
     ContactCustomization: {
       connectionInfo: {
@@ -192,7 +193,7 @@ const UsefireFunctionsHook = () => {
   // =========================
 
   const saveStoreConfig = async (configID, configData) => {
-    const storeRef = doc(db, "StoreConfigs", configID);
+    const storeRef = doc(db, "StoreConfig", configID);
     await setDoc(storeRef, {
       ...configData,
       updatedAt: new Date().toISOString(),
@@ -201,8 +202,14 @@ const UsefireFunctionsHook = () => {
     return { success: true, configID };
   };
 
+  const fetchStoreConfig = async (configID) => {
+    const storeRef = doc(db, "StoreConfig", configID);
+    const docSnap = await getDoc(storeRef);
+    return docSnap.exists() ? docSnap.data() : null;
+  };
+
   const updateStoreConfig = async (configID, updates) => {
-    const storeRef = doc(db, "StoreConfigs", configID);
+    const storeRef = doc(db, "StoreConfig", configID);
     await updateDoc(storeRef, {
       ...updates,
       updatedAt: new Date().toISOString(),
@@ -215,13 +222,13 @@ const UsefireFunctionsHook = () => {
   };
 
   const getStoreConfig = async (configID) => {
-    const storeRef = doc(db, "StoreConfigs", configID);
+    const storeRef = doc(db, "StoreConfig", configID);
     const docSnap = await getDoc(storeRef);
     return docSnap.exists() ? docSnap.data() : null;
   };
 
   const initializeStore = async (configID, initialData = {}) => {
-    const storeRef = doc(db, "StoreConfigs", configID);
+    const storeRef = doc(db, "StoreConfig", configID);
     const data = {
       ...storeConfigsTemplate,
       ...initialData,
@@ -233,7 +240,7 @@ const UsefireFunctionsHook = () => {
   };
 
   const updateStoreSection = async (configID, section, sectionData) => {
-    const storeRef = doc(db, "StoreConfigs", configID);
+    const storeRef = doc(db, "StoreConfig", configID);
     await updateDoc(storeRef, {
       [section]: sectionData,
       updatedAt: new Date().toISOString(),
@@ -296,6 +303,7 @@ const UsefireFunctionsHook = () => {
 
   return {
     saveStoreConfig,
+    fetchStoreConfig, // NEW: Added for fetching store config
     updateStoreConfig,
     getStoreConfig,
     initializeStore,

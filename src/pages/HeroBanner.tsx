@@ -13,7 +13,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 export default function HeroBanner() {
   const { globalState, setGlobalState } = useContext(AppContext);
-  const { updateStoreConfig } = UsefireFunctionsHook();
+  const firebaseFunctions = UsefireFunctionsHook();
+  const { updateStoreConfig } = firebaseFunctions;
+  const getStoreConfig = firebaseFunctions.getStoreConfig || firebaseFunctions.fetchStoreConfig;
   const { toast } = useToast();
   
   // LOCAL CONFIG STATE - Use StoreConfig from global state
@@ -22,7 +24,8 @@ export default function HeroBanner() {
   // UI state
   const [activePage, setActivePage] = useState("Home");
   const [activeTab, setActiveTab] = useState("0");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   
   // Preview animation state
   const [isPlaying, setIsPlaying] = useState(false);
@@ -55,27 +58,171 @@ export default function HeroBanner() {
     { name: "Contact", type: "static" },
   ];
 
-  // LOAD CONFIG IMMEDIATELY ON PAGE RELOAD
-  useEffect(() => {
-    const storedConfig = JSON.parse(localStorage.getItem("StoreConfig"));
-    const authenticatedUser = JSON.parse(
-      localStorage.getItem("AuthenticatedUser")
-    );
+  // Default configuration structure
+  const getDefaultConfig = () => ({
+    HomeCustomization: {
+      slideAnimation: "fade",
+      carouselSliders: [
+        {
+          imageURL: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
+          bannerHeading: "Welcome to Our Store",
+          bannerSmallHeading: "Discover amazing products at great prices",
+          Button1: {
+            title: "Shop Now",
+            color: "#10b981",
+            textColor: "#ffffff",
+            link: "/products",
+          },
+          Button2: {
+            title: "Learn More",
+            color: "#ffffff",
+            textColor: "#000000",
+            link: "/about",
+          },
+          textAnimation: "fadeIn",
+        },
+      ],
+    },
+    AboutCustomization: {
+      banner: {
+        bannerHeading: "About Us",
+        bannerSmallHeading: "Learn more about our story and mission",
+        backgroundColor: "#10b981",
+        gradientEnabled: false,
+        gradientColor1: "#10b981",
+        gradientColor2: "#06b6d4",
+        gradientDirection: "to right",
+      },
+    },
+    BlogCustomization: {
+      banner: {
+        bannerHeading: "Our Blog",
+        bannerSmallHeading: "Read our latest articles and updates",
+        backgroundColor: "#3b82f6",
+        gradientEnabled: false,
+        gradientColor1: "#3b82f6",
+        gradientColor2: "#8b5cf6",
+        gradientDirection: "to right",
+      },
+    },
+    ContactCustomization: {
+      banner: {
+        bannerHeading: "Contact Us",
+        bannerSmallHeading: "Get in touch with our team",
+        backgroundColor: "#f59e0b",
+        gradientEnabled: false,
+        gradientColor1: "#f59e0b",
+        gradientColor2: "#ef4444",
+        gradientDirection: "to right",
+      },
+    },
+  });
 
-    if (storedConfig || authenticatedUser) {
+  // LOAD CONFIG FROM FIRESTORE OR LOCALSTORAGE
+  useEffect(() => {
+    const loadConfiguration = async () => {
+      setLoading(true);
+      
+      let storedConfig = null;
+      let authenticatedUser = null;
+
+      // Safely parse localStorage
+      try {
+        const storedConfigString = localStorage.getItem("StoreConfig");
+        storedConfig = storedConfigString ? JSON.parse(storedConfigString) : null;
+      } catch (e) {
+        console.error("Error parsing StoreConfig from localStorage:", e);
+      }
+
+      try {
+        const authenticatedUserString = localStorage.getItem("AuthenticatedUser");
+        authenticatedUser = authenticatedUserString ? JSON.parse(authenticatedUserString) : null;
+      } catch (e) {
+        console.error("Error parsing AuthenticatedUser from localStorage:", e);
+      }
+
+      // Try to fetch from Firestore if getStoreConfig is available
+      let firestoreConfig = null;
+      if (getStoreConfig && typeof getStoreConfig === 'function') {
+        try {
+          console.log("Fetching config from Firestore...");
+          firestoreConfig = await getStoreConfig("StoreConfig001");
+          console.log("Firestore config loaded:", firestoreConfig);
+          
+          // If Firestore returns an object with the data nested, extract it
+          if (firestoreConfig && firestoreConfig.data) {
+            firestoreConfig = firestoreConfig.data;
+          }
+        } catch (e) {
+          console.error("Error fetching from Firestore:", e);
+        }
+      } else {
+        console.log("getStoreConfig function not available, using localStorage/defaults");
+      }
+
+      // Get default configuration
+      const defaultConfig = getDefaultConfig();
+      
+      // Priority: Firestore > localStorage > defaults
+      const sourceConfig = firestoreConfig || storedConfig;
+      
+      // Deep merge: prioritize stored values, but fill in missing pages with defaults
+      let mergedConfig = { ...defaultConfig };
+      
+      if (sourceConfig) {
+        Object.keys(defaultConfig).forEach(pageKey => {
+          if (sourceConfig[pageKey]) {
+            mergedConfig[pageKey] = {
+              ...defaultConfig[pageKey],
+              ...sourceConfig[pageKey],
+            };
+            
+            // Special handling for banner objects
+            if (defaultConfig[pageKey].banner && sourceConfig[pageKey].banner) {
+              mergedConfig[pageKey].banner = {
+                ...defaultConfig[pageKey].banner,
+                ...sourceConfig[pageKey].banner,
+              };
+            }
+          }
+        });
+        
+        // Also include any extra pages that might be in sourceConfig but not in defaults
+        Object.keys(sourceConfig).forEach(key => {
+          if (!mergedConfig[key]) {
+            mergedConfig[key] = sourceConfig[key];
+          }
+        });
+      }
+
+      console.log("Final merged banner configuration:", mergedConfig);
+
+      // Update global state
       setGlobalState((prev) => ({
         ...prev,
-        StoreConfig: storedConfig || prev.StoreConfig,
+        StoreConfig: mergedConfig,
         AuthenticatedUser: authenticatedUser || prev.AuthenticatedUser,
       }));
 
-      setConfig(storedConfig || globalState.StoreConfig);
-    }
+      // Update local config
+      setConfig(mergedConfig);
+      
+      // Save to localStorage for quick access next time
+      localStorage.setItem("StoreConfig", JSON.stringify(mergedConfig));
+      
+      setLoading(false);
+      setInitialLoadComplete(true);
+    };
+
+    loadConfiguration();
   }, []); // runs only on first mount
 
   // Update local config when global state changes
   useEffect(() => {
-    setConfig(globalState.StoreConfig);
+    if (globalState.StoreConfig && globalState.StoreConfig !== config) {
+      console.log("Syncing config from global state:", globalState.StoreConfig);
+      setConfig(globalState.StoreConfig);
+    }
   }, [globalState.StoreConfig]);
 
   // ⛏ UPDATE NESTED CONFIG PATH
@@ -96,24 +243,43 @@ export default function HeroBanner() {
   };
 
   // SAVE TO GLOBAL + FIREBASE
-  const handleSave = () => {
-    setGlobalState({
-      ...globalState,
-      StoreConfig: config,
-    });
+  const handleSave = async () => {
+    setLoading(true);
+    
+    try {
+      // Update global state
+      setGlobalState({
+        ...globalState,
+        StoreConfig: config,
+      });
 
-    console.log("Saved banner config: ", config);
-    localStorage.setItem("StoreConfig", JSON.stringify(config));
+      console.log("Saving banner config to Firestore: ", config);
+      
+      // Save to localStorage
+      localStorage.setItem("StoreConfig", JSON.stringify(config));
 
-    updateStoreConfig("StoreConfig001", config);
-    toast({
-      title: "Banner Configuration Saved",
-      description: "Your banner configurations have been updated successfully.",
-    });
+      // Save to Firestore
+      await updateStoreConfig("StoreConfig001", config);
+      
+      toast({
+        title: "✅ Banner Configuration Saved",
+        description: "Your banner configurations have been updated successfully.",
+      });
+    } catch (error) {
+      console.error("Error saving banner config:", error);
+      toast({
+        title: "❌ Error Saving Configuration",
+        description: "There was an error saving your banner configuration. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Get current page configuration
   const getCurrentPageConfig = () => {
+    if (!config) return {};
     const pageKey = `${activePage}Customization`;
     return config[pageKey] || {};
   };
@@ -370,6 +536,19 @@ const getBannerBackgroundStyle = (banner: any) => {
   const staticBanner = getCurrentBanner();
   const currentPreviewSlide = isCarouselPage() ? (heroSlides[previewSlideIndex] || heroSlides[0]) : null;
 
+  // Debug logging
+  useEffect(() => {
+    console.log(`Active page: ${activePage}`);
+    console.log(`Is carousel page: ${isCarouselPage()}`);
+    console.log(`Current page config:`, getCurrentPageConfig());
+    if (isCarouselPage()) {
+      console.log(`Hero slides:`, heroSlides);
+      console.log(`Current preview slide:`, currentPreviewSlide);
+    } else {
+      console.log(`Static banner:`, staticBanner);
+    }
+  }, [activePage, config, previewSlideIndex]);
+
   // Helper function to get contrasting text color
   const getContrastingTextColor = (hexColor: string) => {
     if (!hexColor) return '#ffffff';
@@ -389,6 +568,18 @@ const getBannerBackgroundStyle = (banner: any) => {
     return luminance > 0.5 ? '#000000' : '#ffffff';
   };
 
+  // Don't render until config is loaded
+  if (loading || !config) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading banner configuration...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* HEADER */}
@@ -396,9 +587,10 @@ const getBannerBackgroundStyle = (banner: any) => {
         <h1 className="text-3xl font-bold">Banner Manager</h1>
         <Button 
           onClick={handleSave} 
-          className="bg-emerald-400 hover:bg-emerald-600"
+          disabled={loading}
+          className="bg-emerald-400 hover:bg-emerald-600 disabled:opacity-50"
         >
-          Save All Changes
+          {loading ? "Saving..." : "Save All Changes"}
         </Button>
       </div>
 

@@ -1,4 +1,4 @@
-import { LayoutDashboard, User2Icon, Image, Package, Star, MessageSquare, FileText, LogOut } from "lucide-react";
+import { LayoutDashboard, User2Icon, Image, Package, Star, MessageSquare, FileText, LogOut, Handshake } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +21,7 @@ const menuItems = [
   { title: "Products", url: "/products", icon: Package },
   { title: "Features", url: "/features", icon: Star },
   { title: "Blog Posts", url: "/blog", icon: FileText },
+  { title: "Affiliation", url: "/affiliation", icon: Handshake },
 ];
 
 export function AdminLayout() {
