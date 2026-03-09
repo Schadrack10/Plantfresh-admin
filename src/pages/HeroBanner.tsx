@@ -29,7 +29,8 @@ export default function HeroBanner() {
   const getStoreConfig = firebaseFunctions.getStoreConfig || firebaseFunctions.fetchStoreConfig;
   const { toast } = useToast();
 
-  const [config, setConfig] = useState(globalState.StoreConfig);
+  // Start with null — we don't render until Firestore data is loaded
+  const [config, setConfig] = useState<any>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("overview");
   const [activePage, setActivePage] = useState("Home");
   const [activeTab, setActiveTab] = useState("0");
@@ -39,11 +40,6 @@ export default function HeroBanner() {
   const [previewSlideIndex, setPreviewSlideIndex] = useState(0);
   const [showTextAnimation, setShowTextAnimation] = useState(true);
   const autoPlayIntervalRef = useRef<any>(null);
-
-  // Overview carousel state — one per page card
-  const [overviewSlideIndexes, setOverviewSlideIndexes] = useState<Record<string, number>>({
-    Home: 0,
-  });
 
   const slideAnimations = [
     { value: "fade", label: "Fade" },
@@ -69,121 +65,48 @@ export default function HeroBanner() {
     { name: "Contact", type: "static" },
   ];
 
-  // ── default config ──────────────────────────────────────────────────────────
-  const getDefaultConfig = () => ({
-    HomeCustomization: {
-      slideAnimation: "fade",
-      carouselSliders: [
-        {
-          imageURL: "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200",
-          bannerHeading: "Welcome to Our Store",
-          bannerSmallHeading: "Discover amazing products at great prices",
-          Button1: { title: "Shop Now", color: "#10b981", textColor: "#ffffff", link: "/products" },
-          Button2: { title: "Learn More", color: "#ffffff", textColor: "#000000", link: "/about" },
-          textAnimation: "fadeIn",
-        },
-      ],
-    },
-    AboutCustomization: {
-      banner: {
-        bannerHeading: "About Us",
-        bannerSmallHeading: "Learn more about our story and mission",
-        backgroundColor: "#10b981",
-        gradientEnabled: false,
-        gradientColor1: "#10b981",
-        gradientColor2: "#06b6d4",
-        gradientDirection: "to right",
-      },
-    },
-    BlogCustomization: {
-      banner: {
-        bannerHeading: "Our Blog",
-        bannerSmallHeading: "Read our latest articles and updates",
-        backgroundColor: "#3b82f6",
-        gradientEnabled: false,
-        gradientColor1: "#3b82f6",
-        gradientColor2: "#8b5cf6",
-        gradientDirection: "to right",
-      },
-    },
-    ContactCustomization: {
-      banner: {
-        bannerHeading: "Contact Us",
-        bannerSmallHeading: "Get in touch with our team",
-        backgroundColor: "#f59e0b",
-        gradientEnabled: false,
-        gradientColor1: "#f59e0b",
-        gradientColor2: "#ef4444",
-        gradientDirection: "to right",
-      },
-    },
-  });
-
-  // ── load config ─────────────────────────────────────────────────────────────
+  // ── load config from Firestore ──────────────────────────────────────────────
   useEffect(() => {
     const loadConfiguration = async () => {
       setLoading(true);
-      let storedConfig = null;
-      let authenticatedUser = null;
-
       try {
-        const s = localStorage.getItem("StoreConfig");
-        storedConfig = s ? JSON.parse(s) : null;
-      } catch {}
+        let firestoreConfig: any = null;
 
-      try {
-        const a = localStorage.getItem("AuthenticatedUser");
-        authenticatedUser = a ? JSON.parse(a) : null;
-      } catch {}
+        if (getStoreConfig && typeof getStoreConfig === "function") {
+          const raw = await getStoreConfig("StoreConfig001");
+          console.log("📦 RAW from Firestore:", raw);
+          // unwrap .data if hook wraps the response
+          firestoreConfig = raw?.data ? raw.data : raw;
+          console.log("✅ Config keys found:", firestoreConfig ? Object.keys(firestoreConfig) : "null");
+        }
 
-      let firestoreConfig = null;
-      if (getStoreConfig && typeof getStoreConfig === "function") {
-        try {
-          firestoreConfig = await getStoreConfig("StoreConfig001");
-          if (firestoreConfig?.data) firestoreConfig = firestoreConfig.data;
-        } catch {}
+        if (firestoreConfig && Object.keys(firestoreConfig).length > 0) {
+          setConfig(firestoreConfig);
+          // Merge into globalState without replacing the whole object
+          setGlobalState({ ...globalState, StoreConfig: firestoreConfig });
+        } else if (globalState?.StoreConfig && Object.keys(globalState.StoreConfig).length > 0) {
+          console.warn("⚠️ Firestore returned empty — using globalState.StoreConfig");
+          setConfig(globalState.StoreConfig);
+        } else {
+          console.warn("⚠️ No config found anywhere — using empty object");
+          setConfig({});
+        }
+      } catch (err) {
+        console.error("❌ Firestore fetch failed:", err);
+        setConfig(globalState?.StoreConfig || {});
+        toast({ title: "Could not load config from Firestore", variant: "destructive" });
+      } finally {
+        setLoading(false);
       }
-
-      const defaultConfig = getDefaultConfig();
-      const sourceConfig = firestoreConfig || storedConfig;
-      let mergedConfig = { ...defaultConfig };
-
-      if (sourceConfig) {
-        Object.keys(defaultConfig).forEach((pageKey) => {
-          if (sourceConfig[pageKey]) {
-            mergedConfig[pageKey] = { ...defaultConfig[pageKey], ...sourceConfig[pageKey] };
-            if (defaultConfig[pageKey].banner && sourceConfig[pageKey].banner) {
-              mergedConfig[pageKey].banner = { ...defaultConfig[pageKey].banner, ...sourceConfig[pageKey].banner };
-            }
-          }
-        });
-        Object.keys(sourceConfig).forEach((key) => {
-          if (!mergedConfig[key]) mergedConfig[key] = sourceConfig[key];
-        });
-      }
-
-      setGlobalState((prev) => ({
-        ...prev,
-        StoreConfig: mergedConfig,
-        AuthenticatedUser: authenticatedUser || prev.AuthenticatedUser,
-      }));
-      setConfig(mergedConfig);
-      localStorage.setItem("StoreConfig", JSON.stringify(mergedConfig));
-      setLoading(false);
     };
 
     loadConfiguration();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    if (globalState.StoreConfig && globalState.StoreConfig !== config) {
-      setConfig(globalState.StoreConfig);
-    }
-  }, [globalState.StoreConfig]);
 
   // ── helpers ─────────────────────────────────────────────────────────────────
   const handleChange = (path: string, value: any) => {
-    setConfig((prev) => {
+    setConfig((prev: any) => {
       const updated = structuredClone(prev);
       const keys = path.split(".");
       let obj: any = updated;
@@ -196,7 +119,7 @@ export default function HeroBanner() {
   const handleSave = async () => {
     setLoading(true);
     try {
-      setGlobalState({ ...globalState, StoreConfig: config });
+      setGlobalState((prev: any) => ({ ...prev, StoreConfig: config }));
       localStorage.setItem("StoreConfig", JSON.stringify(config));
       await updateStoreConfig("StoreConfig001", config);
       toast({ title: "✅ Banner Configuration Saved", description: "Your banner configurations have been updated successfully." });
@@ -208,19 +131,22 @@ export default function HeroBanner() {
   };
 
   const getPageConfig = (page: string) => {
-    if (!config) return {};
-    return config[`${page}Customization`] || {};
+    if (!config) return null;
+    return config[`${page}Customization`] || null;
   };
 
   const getCurrentPageConfig = () => getPageConfig(activePage);
   const isCarouselPage = (page = activePage) => page === "Home";
 
-  const getSlides = (page = activePage) => isCarouselPage(page) ? (getPageConfig(page)?.carouselSliders || []) : [];
-  const getCurrentSlides = () => getSlides(activePage);
+  const getSlides = (page = activePage) => {
+    const pageConfig = getPageConfig(page);
+    if (!pageConfig) return [];
+    return pageConfig.carouselSliders || [];
+  };
 
+  const getCurrentSlides = () => getSlides(activePage);
   const getBanner = (page = activePage) => !isCarouselPage(page) ? (getPageConfig(page)?.banner || {}) : {};
   const getCurrentBanner = () => getBanner(activePage);
-
   const getCurrentAnimation = () => getCurrentPageConfig()?.slideAnimation || "fade";
 
   const updatePageConfig = (updates: any) => {
@@ -297,7 +223,7 @@ export default function HeroBanner() {
       clearInterval(autoPlayIntervalRef.current);
     }
     return () => clearInterval(autoPlayIntervalRef.current);
-  }, [isPlaying, activePage]);
+  }, [isPlaying, activePage, config]);
 
   useEffect(() => {
     setActiveTab("0");
@@ -368,11 +294,20 @@ export default function HeroBanner() {
     return luminance > 0.5 ? "#000000" : "#ffffff";
   };
 
+  // Safe image src — base64 images stored in Firestore may be truncated; fall back to placeholder
+  const safeImageSrc = (url: string) => {
+    if (!url) return "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200";
+    // If it's a full base64 string it will be fine; truncated ones start with "data:image/" without valid data
+    if (url.startsWith("data:") && url.length < 100) {
+      return "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200";
+    }
+    return url;
+  };
+
   const heroSlides = getCurrentSlides();
   const staticBanner = getCurrentBanner();
   const currentPreviewSlide = isCarouselPage() ? (heroSlides[previewSlideIndex] || heroSlides[0]) : null;
 
-  // ── open a page in editor ───────────────────────────────────────────────────
   const openEditor = (pageName: string) => {
     setActivePage(pageName);
     setViewMode("editor");
@@ -394,16 +329,19 @@ export default function HeroBanner() {
   const OverviewBannerCard = ({ page }: { page: typeof pages[0] }) => {
     const slides = getSlides(page.name);
     const banner = getBanner(page.name);
+    const slideCount = slides.length;
     const [slideIdx, setSlideIdx] = useState(0);
 
     // mini auto-cycle for carousel cards
     useEffect(() => {
-      if (page.type !== "carousel" || slides.length <= 1) return;
-      const t = setInterval(() => setSlideIdx((p) => (p + 1) % slides.length), 3500);
+      if (page.type !== "carousel" || slideCount <= 1) return;
+      const t = setInterval(() => setSlideIdx((p) => (p + 1) % slideCount), 3500);
       return () => clearInterval(t);
-    }, [slides.length]);
+    }, [slideCount]);
 
     const slide = slides[slideIdx] || slides[0];
+    // Grab the real slideAnimation from config
+    const slideAnim = getPageConfig(page.name)?.slideAnimation || "fade";
 
     return (
       <div className="rounded-xl overflow-hidden shadow-lg border border-slate-200 group relative">
@@ -411,9 +349,12 @@ export default function HeroBanner() {
         {page.type === "carousel" && slide ? (
           <div className="relative w-full h-52">
             <img
-              src={slide.imageURL}
+              src={safeImageSrc(slide.imageURL)}
               alt={slide.bannerHeading}
               className="w-full h-full object-cover transition-all duration-700"
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200";
+              }}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
             <div className="absolute inset-0 flex items-center px-6">
@@ -451,7 +392,7 @@ export default function HeroBanner() {
               </div>
             </div>
             {/* slide dots */}
-            {slides.length > 1 && (
+            {slideCount > 1 && (
               <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
                 {slides.map((_: any, i: number) => (
                   <div
@@ -486,10 +427,10 @@ export default function HeroBanner() {
             <p className="font-semibold text-sm text-slate-800">{page.name} Page</p>
             <p className="text-xs text-slate-500">
               {page.type === "carousel"
-                ? `${slides.length} slide${slides.length !== 1 ? "s" : ""} · ${getCurrentAnimation()} transition`
+                ? `${slideCount} slide${slideCount !== 1 ? "s" : ""} · ${slideAnim} transition`
                 : banner.gradientEnabled
-                ? "Gradient background"
-                : "Solid background"}
+                  ? "Gradient background"
+                  : "Solid background"}
             </p>
           </div>
           <Button
@@ -528,22 +469,17 @@ export default function HeroBanner() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* view toggle */}
           <div className="hidden sm:flex border rounded-lg overflow-hidden">
             <button
               onClick={() => setViewMode("overview")}
-              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${
-                viewMode === "overview" ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-              }`}
+              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${viewMode === "overview" ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
             >
               <LayoutDashboard className="w-4 h-4" />
               Overview
             </button>
             <button
               onClick={() => setViewMode("editor")}
-              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${
-                viewMode === "editor" ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
-              }`}
+              className={`px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors ${viewMode === "editor" ? "bg-slate-800 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
             >
               <Pencil className="w-4 h-4" />
               Editor
@@ -622,7 +558,7 @@ export default function HeroBanner() {
               <Card style={{ backgroundColor: "#f0f4f8" }}>
                 <CardHeader>
                   <div className="flex items-center justify-between">
-                    <CardTitle>{activePage} Page — Carousel Slides</CardTitle>
+                    <CardTitle>{activePage} Page — Carousel Slides ({heroSlides.length})</CardTitle>
                     <Button onClick={addSlide} size="sm" className="bg-emerald-400 hover:bg-emerald-600">
                       <Plus className="w-4 h-4 mr-2" /> Add Slide
                     </Button>
@@ -648,9 +584,10 @@ export default function HeroBanner() {
 
                     {heroSlides.map((slide: any, index: number) => (
                       <TabsContent key={index} value={String(index)} className="mt-6">
-                        <div className="grid md:grid-cols-2 gap-6">
-                          {/* Preview */}
-                          <div className="space-y-4">
+                        <div className="space-y-6">
+
+                          {/* ── Full-width Preview ── */}
+                          <div className="space-y-3">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
                                 <Eye className="w-4 h-4" /> Live Preview
@@ -670,16 +607,19 @@ export default function HeroBanner() {
                               )}
                             </div>
 
-                            <div className="relative w-full h-[400px] rounded-lg overflow-hidden shadow-lg border-2 border-slate-200">
+                            <div className="relative w-full h-[420px] rounded-lg overflow-hidden shadow-lg border-2 border-slate-200">
                               <img
                                 key={previewSlideIndex}
-                                src={currentPreviewSlide?.imageURL}
+                                src={safeImageSrc(currentPreviewSlide?.imageURL)}
                                 alt="Preview"
                                 className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).src = "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1200";
+                                }}
                               />
                               <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
                               <div className="absolute inset-0 flex items-center">
-                                <div className="px-8 max-w-xl">
+                                <div className="px-8 max-w-2xl">
                                   <h1 className={`text-4xl font-bold text-white mb-4 leading-tight ${showTextAnimation ? getTextAnimationStyle(currentPreviewSlide?.textAnimation) : getTextInitialStyle(currentPreviewSlide?.textAnimation)}`}>
                                     {currentPreviewSlide?.bannerHeading || "Banner Heading"}
                                   </h1>
@@ -712,86 +652,101 @@ export default function HeroBanner() {
                             </div>
                           </div>
 
-                          {/* Fields */}
-                          <div className="space-y-4">
-                            <div className="text-sm font-semibold text-slate-700">Edit Slide {index + 1}</div>
+                          {/* ── Settings side by side ── */}
+                          <div className="grid md:grid-cols-2 gap-6" style={{alignItems:"stretch"}}>
 
-                            {[
-                              { label: "Image URL", field: "imageURL", type: "input", placeholder: "Enter image URL" },
-                            ].map(({ label, field, placeholder }) => (
-                              <div key={field} className="space-y-2">
-                                <Label>{label}</Label>
-                                <Input placeholder={placeholder} value={slide[field] || ""} onChange={(e) => updateSlideField(index, field, e.target.value)} />
+                            {/* LEFT: Content */}
+                            <div className="border rounded-xl p-4 bg-white space-y-4" style={{height:"100%"}}>
+                              <div className="text-sm font-semibold text-slate-700 pb-1 border-b">Content</div>
+
+                              <div className="space-y-2">
+                                <Label>Image URL</Label>
+                                <Input placeholder="Enter image URL" value={slide.imageURL || ""} onChange={(e) => updateSlideField(index, "imageURL", e.target.value)} />
                               </div>
-                            ))}
 
-                            <div className="space-y-2">
-                              <Label>Or Upload Image</Label>
-                              <Input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, index)} />
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>Text Animation</Label>
-                              <Select value={slide.textAnimation || "fadeIn"} onValueChange={(v) => updateSlideField(index, "textAnimation", v)}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                  {textAnimations.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>Main Heading</Label>
-                              <Input placeholder="e.g., Natural & Powerful" value={slide.bannerHeading || ""} onChange={(e) => updateSlideField(index, "bannerHeading", e.target.value)} />
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label>Subtitle</Label>
-                              <Textarea placeholder="e.g., 100% plant-based ingredients" value={slide.bannerSmallHeading || ""} onChange={(e) => updateSlideField(index, "bannerSmallHeading", e.target.value)} rows={3} />
-                            </div>
-
-                            {/* Button 1 */}
-                            <div className="border rounded-lg p-3 space-y-3 bg-white">
-                              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Button 1</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1"><Label className="text-xs">Text</Label><Input placeholder="Shop Now" value={slide.Button1?.title || ""} onChange={(e) => updateSlideField(index, "Button1.title", e.target.value)} /></div>
-                                <div className="space-y-1"><Label className="text-xs">Link</Label><Input placeholder="/products" value={slide.Button1?.link || ""} onChange={(e) => updateSlideField(index, "Button1.link", e.target.value)} /></div>
+                              <div className="space-y-2">
+                                <Label>Or Upload Image</Label>
+                                <Input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, index)} />
                               </div>
-                              <div className="space-y-1">
-                                <Label className="text-xs">Color</Label>
-                                <div className="flex gap-2">
-                                  <Input type="color" value={slide.Button1?.color || "#10b981"} onChange={(e) => updateSlideField(index, "Button1.color", e.target.value)} className="w-14 h-9" />
-                                  <Input placeholder="#10b981" value={slide.Button1?.color || ""} onChange={(e) => updateSlideField(index, "Button1.color", e.target.value)} />
+
+                              <div className="space-y-2">
+                                <Label>Text Animation</Label>
+                                <Select value={slide.textAnimation || "fadeIn"} onValueChange={(v) => updateSlideField(index, "textAnimation", v)}>
+                                  <SelectTrigger><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    {textAnimations.map((a) => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label>Main Heading</Label>
+                                <Input placeholder="e.g., Natural & Powerful" value={slide.bannerHeading || ""} onChange={(e) => updateSlideField(index, "bannerHeading", e.target.value)} />
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label>Subtitle</Label>
+                                <Textarea placeholder="e.g., 100% plant-based ingredients" value={slide.bannerSmallHeading || ""} onChange={(e) => updateSlideField(index, "bannerSmallHeading", e.target.value)} rows={3} />
+                              </div>
+                            </div>
+
+                            {/* RIGHT: Buttons */}
+                            <div className="border rounded-xl p-4 bg-white space-y-4" style={{height:"100%"}}>
+                              <div className="text-sm font-semibold text-slate-700 pb-1 border-b">Buttons</div>
+
+                              {/* Button 1 */}
+                              <div className="border rounded-lg p-3 space-y-3 bg-slate-50">
+                                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Button 1</p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1"><Label className="text-xs">Text</Label><Input placeholder="Shop Now" value={slide.Button1?.title || ""} onChange={(e) => updateSlideField(index, "Button1.title", e.target.value)} /></div>
+                                  <div className="space-y-1"><Label className="text-xs">Link</Label><Input placeholder="/products" value={slide.Button1?.link || ""} onChange={(e) => updateSlideField(index, "Button1.link", e.target.value)} /></div>
                                 </div>
-                              </div>
-                            </div>
-
-                            {/* Button 2 */}
-                            <div className="border rounded-lg p-3 space-y-3 bg-white">
-                              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Button 2</p>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1"><Label className="text-xs">Text</Label><Input placeholder="Learn More" value={slide.Button2?.title || ""} onChange={(e) => updateSlideField(index, "Button2.title", e.target.value)} /></div>
-                                <div className="space-y-1"><Label className="text-xs">Link</Label><Input placeholder="/about" value={slide.Button2?.link || ""} onChange={(e) => updateSlideField(index, "Button2.link", e.target.value)} /></div>
-                              </div>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                  <Label className="text-xs">Background</Label>
-                                  <div className="flex gap-2">
-                                    <Input type="color" value={slide.Button2?.color || "#ffffff"} onChange={(e) => updateSlideField(index, "Button2.color", e.target.value)} className="w-14 h-9" />
-                                    <Input placeholder="#ffffff" value={slide.Button2?.color || ""} onChange={(e) => updateSlideField(index, "Button2.color", e.target.value)} />
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Background</Label>
+                                    <div className="flex gap-2">
+                                      <Input type="color" value={slide.Button1?.color || "#10b981"} onChange={(e) => updateSlideField(index, "Button1.color", e.target.value)} className="w-14 h-9" />
+                                      <Input placeholder="#10b981" value={slide.Button1?.color || ""} onChange={(e) => updateSlideField(index, "Button1.color", e.target.value)} />
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="space-y-1">
-                                  <Label className="text-xs">Text Color</Label>
-                                  <div className="flex gap-2">
-                                    <Input type="color" value={slide.Button2?.textColor || "#000000"} onChange={(e) => updateSlideField(index, "Button2.textColor", e.target.value)} className="w-14 h-9" />
-                                    <Input placeholder="#000000" value={slide.Button2?.textColor || ""} onChange={(e) => updateSlideField(index, "Button2.textColor", e.target.value)} />
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Text Color</Label>
+                                    <div className="flex gap-2">
+                                      <Input type="color" value={slide.Button1?.textColor || "#ffffff"} onChange={(e) => updateSlideField(index, "Button1.textColor", e.target.value)} className="w-14 h-9" />
+                                      <Input placeholder="#ffffff" value={slide.Button1?.textColor || ""} onChange={(e) => updateSlideField(index, "Button1.textColor", e.target.value)} />
+                                    </div>
                                   </div>
                                 </div>
                               </div>
+
+                              {/* Button 2 */}
+                              <div className="border rounded-lg p-3 space-y-3 bg-slate-50">
+                                <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Button 2</p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1"><Label className="text-xs">Text</Label><Input placeholder="Learn More" value={slide.Button2?.title || ""} onChange={(e) => updateSlideField(index, "Button2.title", e.target.value)} /></div>
+                                  <div className="space-y-1"><Label className="text-xs">Link</Label><Input placeholder="/about" value={slide.Button2?.link || ""} onChange={(e) => updateSlideField(index, "Button2.link", e.target.value)} /></div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Background</Label>
+                                    <div className="flex gap-2">
+                                      <Input type="color" value={slide.Button2?.color || "#ffffff"} onChange={(e) => updateSlideField(index, "Button2.color", e.target.value)} className="w-14 h-9" />
+                                      <Input placeholder="#ffffff" value={slide.Button2?.color || ""} onChange={(e) => updateSlideField(index, "Button2.color", e.target.value)} />
+                                    </div>
+                                  </div>
+                                  <div className="space-y-1">
+                                    <Label className="text-xs">Text Color</Label>
+                                    <div className="flex gap-2">
+                                      <Input type="color" value={slide.Button2?.textColor || "#000000"} onChange={(e) => updateSlideField(index, "Button2.textColor", e.target.value)} className="w-14 h-9" />
+                                      <Input placeholder="#000000" value={slide.Button2?.textColor || ""} onChange={(e) => updateSlideField(index, "Button2.textColor", e.target.value)} />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                          </div>
-                        </div>
+
+                          </div>{/* end settings grid */}
+                        </div>{/* end outer space-y */}
                       </TabsContent>
                     ))}
                   </Tabs>

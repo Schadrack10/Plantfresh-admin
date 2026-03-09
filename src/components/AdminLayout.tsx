@@ -46,28 +46,28 @@ export function AdminLayout() {
                 <SidebarMenu>
                   {menuItems.map((item) => (
                     <SidebarMenuItem key={item.title}>
-                      <SidebarMenuButton asChild>
-                        <NavLink
-                          to={item.url}
-                          end
-                          className={({ isActive }) =>
-                            isActive
-                              ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                              : "hover:bg-sidebar-accent/50"
-                          }
-                        >
-                          <item.icon className="mr-2 h-4 w-4" />
-                          <span>{item.title}</span>
-                        </NavLink>
-                      </SidebarMenuButton>
+                      <NavLink to={item.url} end>
+                        {({ isActive }) => (
+                          <SidebarMenuButton
+                            className={
+                              isActive
+                                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                                : "hover:bg-sidebar-accent/50"
+                            }
+                          >
+                            <item.icon className="mr-2 h-4 w-4" />
+                            <span>{item.title}</span>
+                          </SidebarMenuButton>
+                        )}
+                      </NavLink>
                     </SidebarMenuItem>
                   ))}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
             <div className="mt-auto p-4 border-t border-sidebar-border">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 className="w-full justify-start"
                 onClick={handleLogout}
               >
