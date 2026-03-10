@@ -30,7 +30,7 @@ const App = () => (
           <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/users" element={<Users />} />
-            <Route path="/hero" element={<HeroBanner />} />
+            <Route path="/banner" element={<HeroBanner />} />
             <Route path="/products" element={<Products />} />
             <Route path="/features" element={<Features />} />
             <Route path="/blog" element={<Blog />} />
