@@ -128,6 +128,7 @@ const UsefireFunctionsHook = () => {
     BlogCustomization: {
       enableComments: true,
       postsPerPage: 10,
+      posts: [], // Added posts array for blog posts
     },
     ContactCustomization: {
       connectionInfo: {
@@ -199,6 +200,12 @@ const UsefireFunctionsHook = () => {
       createdAt: new Date().toISOString(),
     });
     return { success: true, configID };
+  };
+
+  const fetchStoreConfig = async (configID) => {
+    const storeRef = doc(db, "StoreConfigs", configID);
+    const docSnap = await getDoc(storeRef);
+    return docSnap.exists() ? docSnap.data() : null;
   };
 
   const updateStoreConfig = async (configID, updates) => {
@@ -296,6 +303,7 @@ const UsefireFunctionsHook = () => {
 
   return {
     saveStoreConfig,
+    fetchStoreConfig, // NEW: Added for fetching store config
     updateStoreConfig,
     getStoreConfig,
     initializeStore,

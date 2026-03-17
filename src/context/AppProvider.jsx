@@ -24,7 +24,7 @@ const AppContextProvider = ({ children }) => {
   const app = initializeApp(firebaseConfig);
   const analytics = getAnalytics(app);
   const db = getFirestore(app);
-  const storage = getStorage();
+  const storage = getStorage(app);
 
   return (
     <AppContext.Provider value={{ globalState, setGlobalState , db , analytics, storage , uploadBytes, ref, getDownloadURL}}>
