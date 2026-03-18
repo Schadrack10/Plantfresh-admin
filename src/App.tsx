@@ -15,6 +15,7 @@ import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import Affiliation from "./pages/Affiliation";
 import AppContextProvider from "./context/AppProvider";
+import AuthManager from './pages/AuthManager';
 
 const queryClient = new QueryClient();
 
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="/features" element={<Features />} />
             <Route path="/blog" element={<Blog />} />
             <Route path="/affiliation" element={<Affiliation />} />
+            <Route path="/auth-manager" element={<AuthManager />} />
           </Route>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
