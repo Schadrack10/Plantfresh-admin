@@ -1,53 +1,46 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Users, ShoppingCart, DollarSign, Clock, CheckCircle, Edit2, Save, X, Eye } from "lucide-react";
+import {
+  Users, ShoppingCart, DollarSign, Clock, CheckCircle,
+  Edit2, Save, X, Eye, RefreshCw, Loader2,
+} from "lucide-react";
 import {
   collection, getDocs, query, where,
-  updateDoc, doc, getDoc, setDoc, addDoc, serverTimestamp
+  updateDoc, doc, getDoc, setDoc, addDoc, serverTimestamp,
 } from "firebase/firestore";
 import emailjs from '@emailjs/browser';
 import AppContext from "../context/AppContext";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── EmailJS Config ───────────────────────────────────────────────────────────
-// Replace these with your actual values from https://emailjs.com/account
-const EMAILJS_SERVICE_ID  = 'YOUR_SERVICE_ID';   // e.g. 'service_abc123'
-const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';  // e.g. 'template_xyz789'
-const EMAILJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';   // e.g. 'user_XXXXXXXXXXXXXXX'
+const EMAILJS_SERVICE_ID  = 'YOUR_SERVICE_ID';
+const EMAILJS_TEMPLATE_ID = 'YOUR_TEMPLATE_ID';
+const EMAILJS_PUBLIC_KEY  = 'YOUR_PUBLIC_KEY';
 
 export default function Affiliation() {
-  const { db, globalState } = useContext(AppContext);
+  const { db } = useContext(AppContext);
   const { toast } = useToast();
 
   const [globalCommissionRate, setGlobalCommissionRate] = useState(10);
-  const [isEditingRate, setIsEditingRate] = useState(false);
-  const [tempRate, setTempRate] = useState(10);
-  const [affiliates, setAffiliates] = useState([]);
-  const [selectedAffiliate, setSelectedAffiliate] = useState(null);
-  const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [processingPayment, setProcessingPayment] = useState(null);
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [isEditingRate, setIsEditingRate]               = useState(false);
+  const [tempRate, setTempRate]                         = useState(10);
+  const [affiliates, setAffiliates]                     = useState([]);
+  const [selectedAffiliate, setSelectedAffiliate]       = useState(null);
+  const [showDetailsModal, setShowDetailsModal]         = useState(false);
+  const [processingPayment, setProcessingPayment]       = useState(null);
+  const [filterStatus, setFilterStatus]                 = useState('all');
+  const [isLoading, setIsLoading]                       = useState(true);
+  const [isRefreshing, setIsRefreshing]                 = useState(false);
 
   const [stats, setStats] = useState({
-    totalAffiliates: 0,
-    totalSales: 0,
-    totalRevenue: 0,
-    totalCommissionPaid: 0,
-    totalCommissionPending: 0,
+    totalAffiliates: 0, totalSales: 0, totalRevenue: 0,
+    totalCommissionPaid: 0, totalCommissionPending: 0,
   });
 
-  useEffect(() => {
-    if (db) {
-      fetchAffiliationData();
-      fetchCommissionRate();
-    }
-  }, [db]);
-
-  // ─── Commission Rate ──────────────────────────────────────────────────────────
-  // Stored in StoreConfigs/StoreConfig001 → AffiliationCustomization.commissionRate
-  const fetchCommissionRate = async () => {
+  // ─── Fetch commission rate ────────────────────────────────────────────────
+  const fetchCommissionRate = useCallback(async () => {
     try {
       const configDoc = await getDoc(doc(db, 'StoreConfigs', 'StoreConfig001'));
       if (configDoc.exists()) {
@@ -58,7 +51,7 @@ export default function Affiliation() {
     } catch (error) {
       console.error('Error fetching commission rate:', error);
     }
-  };
+  }, [db]);
 
   const updateCommissionRate = async () => {
     try {
@@ -71,40 +64,39 @@ export default function Affiliation() {
       setIsEditingRate(false);
       toast({ title: "Commission Rate Updated", description: `New global commission rate: ${tempRate}%` });
     } catch (error) {
-      console.error('Error updating commission rate:', error);
       toast({ title: "Error", description: "Failed to update commission rate", variant: "destructive" });
     }
   };
 
-  // ─── Data Fetching ────────────────────────────────────────────────────────────
-  const fetchAffiliationData = async () => {
+  // ─── Fetch affiliation data ───────────────────────────────────────────────
+  const fetchAffiliationData = useCallback(async (silent = false) => {
+    if (!db) return;
+    if (!silent) setIsLoading(true);
+    else setIsRefreshing(true);
+
     try {
-      const usersSnapshot = await getDocs(
-        query(collection(db, 'Users'), where('IsAffiliate', '==', true))
-      );
-      const historySnapshot = await getDocs(collection(db, 'AffiliateHistory'));
+      const [usersSnapshot, historySnapshot] = await Promise.all([
+        getDocs(query(collection(db, 'Users'), where('IsAffiliate', '==', true))),
+        getDocs(collection(db, 'AffiliateHistory')),
+      ]);
 
       const affiliateData = new Map();
-      let globalStats = {
+      const globalStats = {
         totalAffiliates: usersSnapshot.size,
         totalSales: 0, totalRevenue: 0,
         totalCommissionPaid: 0, totalCommissionPending: 0,
       };
 
       usersSnapshot.forEach((userDoc) => {
-        const userData = userDoc.data();
-        if (userData.AffiliateId) {
-          affiliateData.set(userData.AffiliateId, {
-            id: userData.AffiliateId,
-            userId: userDoc.id,          // used for Notifications lookup
-            name: userData.Name || 'Unknown',
-            email: userData.UserID || userData.Email || '',
-            address: userData.Address || '',
-            city: userData.City || '',
-            country: userData.Country || '',
-            phone: userData.Phone || '',
-            sales: [],
-            totalSales: 0, totalRevenue: 0,
+        const d = userDoc.data();
+        if (d.AffiliateId) {
+          affiliateData.set(d.AffiliateId, {
+            id: d.AffiliateId, userId: userDoc.id,
+            name: d.Name || 'Unknown',
+            email: d.UserID || d.Email || '',
+            address: d.Address || '', city: d.City || '',
+            country: d.Country || '', phone: d.Phone || '',
+            sales: [], totalSales: 0, totalRevenue: 0,
             commissionPaid: 0, commissionPending: 0, totalCommission: 0,
           });
         }
@@ -125,9 +117,9 @@ export default function Affiliation() {
         }
 
         const affiliate = affiliateData.get(affiliateId);
-        const revenue = typeof data.Total === 'string' ? parseFloat(data.Total) : (data.Total || 0);
+        const revenue   = typeof data.Total === 'string' ? parseFloat(data.Total) : (data.Total || 0);
         const commission = data.Commission || 0;
-        const isPaid = data.Status === 'paid';
+        const isPaid     = data.Status === 'paid';
 
         affiliate.sales.push({
           id: historyDoc.id, orderId: data.OrderID, date: data.PurchaseDate,
@@ -135,95 +127,85 @@ export default function Affiliation() {
           products: data.Products || [], userEmail: data.UserID || '',
         });
 
-        affiliate.totalSales += 1;
-        affiliate.totalRevenue += revenue;
+        affiliate.totalSales    += 1;
+        affiliate.totalRevenue  += revenue;
         affiliate.totalCommission += commission;
-
         if (isPaid) {
-          affiliate.commissionPaid += commission;
+          affiliate.commissionPaid    += commission;
           globalStats.totalCommissionPaid += commission;
         } else {
-          affiliate.commissionPending += commission;
+          affiliate.commissionPending    += commission;
           globalStats.totalCommissionPending += commission;
         }
-
-        globalStats.totalSales += 1;
+        globalStats.totalSales   += 1;
         globalStats.totalRevenue += revenue;
       });
 
+      const sorted = Array.from(affiliateData.values()).sort((a, b) => b.totalRevenue - a.totalRevenue);
       setStats(globalStats);
-      setAffiliates(Array.from(affiliateData.values()).sort((a, b) => b.totalRevenue - a.totalRevenue));
+      setAffiliates(sorted);
+
+      // Keep modal in sync if open
+      if (selectedAffiliate) {
+        const updated = sorted.find(a => a.id === selectedAffiliate.id);
+        if (updated) setSelectedAffiliate(updated);
+      }
     } catch (error) {
       console.error('Error fetching affiliation data:', error);
       toast({ title: "Error", description: "Failed to load affiliation data", variant: "destructive" });
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
+  }, [db, selectedAffiliate]);
+
+  useEffect(() => {
+    if (db) {
+      fetchAffiliationData();
+      fetchCommissionRate();
+    }
+  }, [db]);
+
+  // ─── Refresh handler ──────────────────────────────────────────────────────
+  const handleRefresh = async () => {
+    await Promise.all([fetchAffiliationData(true), fetchCommissionRate()]);
+    toast({ title: "Refreshed", description: "Affiliation data is up to date." });
   };
 
-  // ─── Notifications + Email ────────────────────────────────────────────────────
-  /**
-   * 1. Writes to `Notifications` collection — affiliate's frontend listens to this
-   *    in real-time via NotificationBell.jsx / useNotifications.js.
-   * 2. Sends an email via EmailJS directly from the browser — no backend needed,
-   *    no Firebase Blaze plan required.
-   */
+  // ─── Notifications + email ────────────────────────────────────────────────
   const sendPaymentNotification = async (affiliate, amount, saleIds) => {
     try {
-      // 1. In-app notification
       if (affiliate.userId) {
         await addDoc(collection(db, 'Notifications'), {
-          userId: affiliate.userId,
-          affiliateId: affiliate.id,
+          userId: affiliate.userId, affiliateId: affiliate.id,
           type: 'commission_paid',
           title: 'Commission Payment Received! 🎉',
-          message: `Your commission of R${amount.toFixed(2)} has been marked as paid. Thank you for your referrals!`,
-          amount,
-          saleIds,
-          read: false,
-          createdAt: serverTimestamp(),
+          message: `Your commission of R${amount.toFixed(2)} has been marked as paid.`,
+          amount, saleIds, read: false, createdAt: serverTimestamp(),
         });
       }
-
-      // 2. Email via EmailJS (free, no backend, no credit card required)
       if (affiliate.email) {
-        await emailjs.send(
-          EMAILJS_SERVICE_ID,
-          EMAILJS_TEMPLATE_ID,
-          {
-            to_email: affiliate.email,   // maps to {{to_email}} in your template
-            to_name:  affiliate.name,    // maps to {{to_name}}
-            amount:   `R${amount.toFixed(2)}`, // maps to {{amount}}
-          },
-          EMAILJS_PUBLIC_KEY
-        );
+        await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+          to_email: affiliate.email, to_name: affiliate.name,
+          amount: `R${amount.toFixed(2)}`,
+        }, EMAILJS_PUBLIC_KEY);
       }
     } catch (error) {
-      // Non-critical – log but don't block the pay action
       console.error('Notification/email error:', error);
     }
   };
 
-  // ─── Pay Handlers ─────────────────────────────────────────────────────────────
+  // ─── Pay handlers ─────────────────────────────────────────────────────────
   const handlePayCommission = async (affiliate, saleId, saleCommission) => {
     setProcessingPayment(saleId);
     try {
       await updateDoc(doc(db, 'AffiliateHistory', saleId), {
-        Status: 'paid',
-        PaidAt: new Date().toISOString(),
+        Status: 'paid', PaidAt: new Date().toISOString(),
       });
       await sendPaymentNotification(affiliate, saleCommission, [saleId]);
-      await fetchAffiliationData();
-
-      // Keep modal in sync without re-fetching
-      setSelectedAffiliate(prev => prev ? {
-        ...prev,
-        sales: prev.sales.map(s => s.id === saleId ? { ...s, status: 'paid' } : s),
-        commissionPaid: prev.commissionPaid + saleCommission,
-        commissionPending: prev.commissionPending - saleCommission,
-      } : prev);
-
+      await fetchAffiliationData(true);
       toast({ title: "Payment Processed", description: "Commission marked as paid." });
     } catch (error) {
-      console.error('Error updating payment status:', error);
       toast({ title: "Error", description: "Failed to process payment", variant: "destructive" });
     } finally {
       setProcessingPayment(null);
@@ -233,119 +215,158 @@ export default function Affiliation() {
   const handlePayAllPending = async (affiliateId) => {
     const affiliate = affiliates.find(a => a.id === affiliateId);
     if (!affiliate) return;
-
     const pendingSales = affiliate.sales.filter(s => s.status === 'pending');
     if (!pendingSales.length) {
-      toast({ title: "No Pending Payments", description: "This affiliate has no pending commissions." });
+      toast({ title: "No Pending Payments" });
       return;
     }
-
     try {
       await Promise.all(pendingSales.map(sale =>
         updateDoc(doc(db, 'AffiliateHistory', sale.id), { Status: 'paid', PaidAt: new Date().toISOString() })
       ));
       const totalPaid = pendingSales.reduce((sum, s) => sum + s.commission, 0);
       await sendPaymentNotification(affiliate, totalPaid, pendingSales.map(s => s.id));
-      await fetchAffiliationData();
+      await fetchAffiliationData(true);
       toast({ title: "All Payments Processed", description: `Paid R${totalPaid.toFixed(2)} to ${affiliate.name}` });
     } catch (error) {
-      console.error('Error paying all commissions:', error);
       toast({ title: "Error", description: "Failed to process all payments", variant: "destructive" });
     }
-  };
-
-  const viewAffiliateDetails = (affiliate) => {
-    setSelectedAffiliate(affiliate);
-    setFilterStatus('all');
-    setShowDetailsModal(true);
   };
 
   const getFilteredSales = (sales) =>
     filterStatus === 'all' ? sales : sales.filter(s => s.status === filterStatus);
 
-  // ─── Render ───────────────────────────────────────────────────────────────────
+  // ─── Loading state ────────────────────────────────────────────────────────
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500 mx-auto mb-3" />
+          <p className="text-slate-500">Loading affiliation data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto">
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-6">
+
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-        <h1 className="text-3xl font-bold">Affiliate Management</h1>
-        <div className="flex items-center gap-3 bg-white p-4 rounded-lg shadow-sm border w-full md:w-auto">
-          <span className="text-sm font-medium text-gray-600">Global Commission:</span>
-          {isEditingRate ? (
-            <div className="flex items-center gap-2">
-              <Input type="number" value={tempRate} onChange={e => setTempRate(Number(e.target.value))}
-                className="w-20 px-2 py-1" min="0" max="100" />
-              <span className="text-lg font-bold">%</span>
-              <Button onClick={updateCommissionRate} size="sm" className="bg-green-500 hover:bg-green-600"><Save className="w-4 h-4" /></Button>
-              <Button onClick={() => { setTempRate(globalCommissionRate); setIsEditingRate(false); }} size="sm" variant="secondary"><X className="w-4 h-4" /></Button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-blue-600">{globalCommissionRate}%</span>
-              <Button onClick={() => setIsEditingRate(true)} size="sm" className="bg-blue-500 hover:bg-blue-600"><Edit2 className="w-4 h-4" /></Button>
-            </div>
-          )}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1 className="text-2xl md:text-3xl font-bold">Affiliate Management</h1>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          {/* Refresh button */}
+          <Button variant="outline" onClick={handleRefresh} disabled={isRefreshing}
+            className="gap-2 w-full sm:w-auto">
+            {isRefreshing
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <RefreshCw className="w-4 h-4" />}
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+
+          {/* Commission rate editor */}
+          <div className="flex items-center gap-3 bg-white p-3 sm:p-4 rounded-lg shadow-sm border w-full sm:w-auto">
+            <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Commission:</span>
+            {isEditingRate ? (
+              <div className="flex items-center gap-2">
+                <Input type="number" value={tempRate} onChange={e => setTempRate(Number(e.target.value))}
+                  className="w-16 px-2 py-1 h-8" min="0" max="100" />
+                <span className="font-bold">%</span>
+                <Button onClick={updateCommissionRate} size="sm" className="bg-green-500 hover:bg-green-600 h-8 w-8 p-0">
+                  <Save className="w-3.5 h-3.5" />
+                </Button>
+                <Button onClick={() => { setTempRate(globalCommissionRate); setIsEditingRate(false); }}
+                  size="sm" variant="secondary" className="h-8 w-8 p-0">
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-xl font-bold text-blue-600">{globalCommissionRate}%</span>
+                <Button onClick={() => setIsEditingRate(true)} size="sm" className="bg-blue-500 hover:bg-blue-600 h-8 w-8 p-0">
+                  <Edit2 className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
         {[
           { label: 'Total Affiliates', value: stats.totalAffiliates, icon: <Users className="h-4 w-4 text-blue-600" />, color: '' },
           { label: 'Total Sales', value: stats.totalSales, icon: <ShoppingCart className="h-4 w-4 text-purple-600" />, color: '' },
-          { label: 'Revenue Generated', value: `R${stats.totalRevenue.toFixed(2)}`, icon: <DollarSign className="h-4 w-4 text-green-600" />, color: '' },
+          { label: 'Revenue', value: `R${stats.totalRevenue.toFixed(2)}`, icon: <DollarSign className="h-4 w-4 text-green-600" />, color: '' },
           { label: 'Commission Paid', value: `R${stats.totalCommissionPaid.toFixed(2)}`, icon: <CheckCircle className="h-4 w-4 text-green-600" />, color: 'text-green-600' },
-          { label: 'Commission Pending', value: `R${stats.totalCommissionPending.toFixed(2)}`, icon: <Clock className="h-4 w-4 text-yellow-600" />, color: 'text-yellow-600' },
+          { label: 'Pending', value: `R${stats.totalCommissionPending.toFixed(2)}`, icon: <Clock className="h-4 w-4 text-yellow-600" />, color: 'text-yellow-600' },
         ].map(({ label, value, icon, color }) => (
-          <Card key={label}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">{label}</CardTitle>{icon}
+          <Card key={label} className="col-span-1">
+            <CardHeader className="flex flex-row items-center justify-between pb-1 pt-3 px-3 md:px-4 md:pt-4">
+              <CardTitle className="text-xs md:text-sm font-medium leading-tight">{label}</CardTitle>
+              {icon}
             </CardHeader>
-            <CardContent><div className={`text-2xl font-bold ${color}`}>{value}</div></CardContent>
+            <CardContent className="px-3 pb-3 md:px-4 md:pb-4">
+              <div className={`text-lg md:text-2xl font-bold truncate ${color}`}>{value}</div>
+            </CardContent>
           </Card>
         ))}
       </div>
 
       {/* Table */}
       <Card>
-        <CardHeader><CardTitle className="text-xl">Affiliate Performance</CardTitle></CardHeader>
-        <CardContent>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="text-lg md:text-xl">Affiliate Performance</CardTitle>
+          {isRefreshing && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+        </CardHeader>
+        <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full min-w-[600px]">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  {['Affiliate', 'Sales', 'Revenue', 'Total Commission', 'Paid', 'Pending', 'Actions'].map(h => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
+                  {['Affiliate', 'Sales', 'Revenue', 'Commission', 'Paid', 'Pending', 'Actions'].map(h => (
+                    <th key={h} className="px-3 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {affiliates.map((affiliate) => (
-                  <tr key={affiliate.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{affiliate.name}</div>
-                      <div className="text-sm text-gray-500">{affiliate.email}</div>
-                      <div className="text-xs text-gray-400">ID: {affiliate.id}</div>
+                  <tr key={affiliate.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-3 md:px-4 py-3">
+                      <div className="font-medium text-gray-900 text-sm">{affiliate.name}</div>
+                      <div className="text-xs text-gray-500 truncate max-w-[140px]">{affiliate.email}</div>
+                      <div className="text-xs text-gray-400">ID: {affiliate.id?.slice(0, 8)}</div>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2"><ShoppingCart className="w-4 h-4 text-purple-600" /><span className="font-semibold">{affiliate.totalSales}</span></div>
+                    <td className="px-3 md:px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <ShoppingCart className="w-3.5 h-3.5 text-purple-600" />
+                        <span className="font-semibold text-sm">{affiliate.totalSales}</span>
+                      </div>
                     </td>
-                    <td className="px-4 py-3"><span className="font-semibold text-green-600">R{affiliate.totalRevenue.toFixed(2)}</span></td>
-                    <td className="px-4 py-3"><span className="font-bold text-blue-600">R{affiliate.totalCommission.toFixed(2)}</span></td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2"><CheckCircle className="w-4 h-4 text-green-600" /><span className="text-green-600 font-semibold">R{affiliate.commissionPaid.toFixed(2)}</span></div>
+                    <td className="px-3 md:px-4 py-3">
+                      <span className="font-semibold text-green-600 text-sm">R{affiliate.totalRevenue.toFixed(2)}</span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2"><Clock className="w-4 h-4 text-yellow-600" /><span className="text-yellow-600 font-semibold">R{affiliate.commissionPending.toFixed(2)}</span></div>
+                    <td className="px-3 md:px-4 py-3">
+                      <span className="font-bold text-blue-600 text-sm">R{affiliate.totalCommission.toFixed(2)}</span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        <Button onClick={() => viewAffiliateDetails(affiliate)} size="sm" className="bg-blue-500 hover:bg-blue-600">
-                          <Eye className="w-4 h-4 mr-1" />View
+                    <td className="px-3 md:px-4 py-3">
+                      <span className="text-green-600 font-semibold text-sm">R{affiliate.commissionPaid.toFixed(2)}</span>
+                    </td>
+                    <td className="px-3 md:px-4 py-3">
+                      <span className="text-yellow-600 font-semibold text-sm">R{affiliate.commissionPending.toFixed(2)}</span>
+                    </td>
+                    <td className="px-3 md:px-4 py-3">
+                      <div className="flex flex-col sm:flex-row gap-1.5">
+                        <Button onClick={() => { setSelectedAffiliate(affiliate); setFilterStatus('all'); setShowDetailsModal(true); }}
+                          size="sm" className="bg-blue-500 hover:bg-blue-600 text-xs h-7 px-2">
+                          <Eye className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline">View</span>
                         </Button>
                         {affiliate.commissionPending > 0 && (
-                          <Button onClick={() => handlePayAllPending(affiliate.id)} size="sm" className="bg-green-500 hover:bg-green-600">
-                            <DollarSign className="w-4 h-4 mr-1" />Pay All
+                          <Button onClick={() => handlePayAllPending(affiliate.id)}
+                            size="sm" className="bg-green-500 hover:bg-green-600 text-xs h-7 px-2">
+                            <DollarSign className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline">Pay All</span>
                           </Button>
                         )}
                       </div>
@@ -356,7 +377,8 @@ export default function Affiliation() {
             </table>
             {affiliates.length === 0 && (
               <div className="text-center py-12 text-gray-500">
-                <Users className="w-12 h-12 mx-auto mb-3 opacity-30" /><p>No affiliates found</p>
+                <Users className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p>No affiliates found</p>
               </div>
             )}
           </div>
@@ -365,44 +387,56 @@ export default function Affiliation() {
 
       {/* Detail Modal */}
       {showDetailsModal && selectedAffiliate && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowDetailsModal(false)}>
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden" onClick={e => e.stopPropagation()}>
-            <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
-              <div>
-                <h3 className="text-xl font-bold">{selectedAffiliate.name}</h3>
-                <p className="text-sm text-gray-500">{selectedAffiliate.email}</p>
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setShowDetailsModal(false)}>
+          <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-4xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={e => e.stopPropagation()}>
+
+            {/* Modal header */}
+            <div className="sticky top-0 bg-white border-b px-4 sm:px-6 py-4 flex justify-between items-start flex-shrink-0">
+              <div className="min-w-0 flex-1 pr-4">
+                <h3 className="text-lg sm:text-xl font-bold truncate">{selectedAffiliate.name}</h3>
+                <p className="text-sm text-gray-500 truncate">{selectedAffiliate.email}</p>
                 {selectedAffiliate.phone && <p className="text-sm text-gray-500">{selectedAffiliate.phone}</p>}
                 {selectedAffiliate.address && (
-                  <p className="text-sm text-gray-500">{selectedAffiliate.address}, {selectedAffiliate.city}, {selectedAffiliate.country}</p>
+                  <p className="text-xs text-gray-400">{selectedAffiliate.address}, {selectedAffiliate.city}, {selectedAffiliate.country}</p>
                 )}
               </div>
-              <Button onClick={() => setShowDetailsModal(false)} variant="ghost" size="sm"><X className="w-6 h-6" /></Button>
+              <Button onClick={() => setShowDetailsModal(false)} variant="ghost" size="sm" className="flex-shrink-0">
+                <X className="w-5 h-5" />
+              </Button>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            {/* Modal body */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+
+              {/* Mini stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
                 {[
                   { label: 'Total Sales', value: selectedAffiliate.totalSales, bg: 'bg-purple-50', color: 'text-purple-600' },
                   { label: 'Revenue', value: `R${selectedAffiliate.totalRevenue.toFixed(2)}`, bg: 'bg-green-50', color: 'text-green-600' },
                   { label: 'Total Commission', value: `R${selectedAffiliate.totalCommission.toFixed(2)}`, bg: 'bg-blue-50', color: 'text-blue-600' },
                   { label: 'Pending', value: `R${selectedAffiliate.commissionPending.toFixed(2)}`, bg: 'bg-yellow-50', color: 'text-yellow-600' },
                 ].map(({ label, value, bg, color }) => (
-                  <div key={label} className={`${bg} p-4 rounded-lg`}>
-                    <div className={`text-sm ${color} mb-1`}>{label}</div>
-                    <div className="text-2xl font-bold">{value}</div>
+                  <div key={label} className={`${bg} p-3 sm:p-4 rounded-xl`}>
+                    <div className={`text-xs ${color} mb-1 font-medium`}>{label}</div>
+                    <div className="text-lg sm:text-2xl font-bold truncate">{value}</div>
                   </div>
                 ))}
               </div>
 
               {selectedAffiliate.commissionPending > 0 && (
                 <div className="mb-4 flex justify-end">
-                  <Button onClick={() => handlePayAllPending(selectedAffiliate.id)} className="bg-green-500 hover:bg-green-600">
-                    <DollarSign className="w-4 h-4 mr-2" />Pay All Pending (R{selectedAffiliate.commissionPending.toFixed(2)})
+                  <Button onClick={() => handlePayAllPending(selectedAffiliate.id)}
+                    className="bg-green-500 hover:bg-green-600 w-full sm:w-auto">
+                    <DollarSign className="w-4 h-4 mr-2" />
+                    Pay All Pending (R{selectedAffiliate.commissionPending.toFixed(2)})
                   </Button>
                 </div>
               )}
 
-              <div className="flex gap-2 mb-4">
+              {/* Filter tabs */}
+              <div className="flex gap-2 mb-4 flex-wrap">
                 {[
                   { key: 'all', label: `All (${selectedAffiliate.sales.length})`, activeClass: '' },
                   { key: 'pending', label: `Pending (${selectedAffiliate.sales.filter(s => s.status === 'pending').length})`, activeClass: 'bg-yellow-600 hover:bg-yellow-700' },
@@ -416,43 +450,50 @@ export default function Affiliation() {
                 ))}
               </div>
 
-              <h4 className="text-lg font-bold mb-4">Sales History</h4>
+              <h4 className="text-base sm:text-lg font-bold mb-4">Sales History</h4>
               <div className="space-y-3">
                 {getFilteredSales(selectedAffiliate.sales).map((sale) => (
-                  <div key={sale.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <div className="font-medium">Order #{sale.orderId?.slice(0, 8) || 'N/A'}</div>
-                        <div className="text-sm text-gray-500">{sale.date}</div>
-                        <div className="text-sm text-gray-500">Customer: {sale.userEmail}</div>
+                  <div key={sale.id} className="border rounded-xl p-3 sm:p-4 hover:shadow-md transition-shadow">
+                    <div className="flex justify-between items-start mb-3 gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-sm">Order #{sale.orderId?.slice(0, 8) || 'N/A'}</div>
+                        <div className="text-xs text-gray-500">{sale.date}</div>
+                        <div className="text-xs text-gray-500 truncate">{sale.userEmail}</div>
                       </div>
-                      <div className="text-right">
-                        <div className="font-bold text-lg">R{sale.revenue.toFixed(2)}</div>
-                        <div className="text-sm text-blue-600 font-semibold">Commission: R{sale.commission.toFixed(2)}</div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="font-bold text-base sm:text-lg">R{sale.revenue.toFixed(2)}</div>
+                        <div className="text-xs text-blue-600 font-semibold">R{sale.commission.toFixed(2)}</div>
                       </div>
                     </div>
+
                     {sale.products?.length > 0 && (
                       <div className="mb-3 border-t pt-3">
-                        <p className="text-sm font-medium mb-2">Products:</p>
+                        <p className="text-xs font-medium mb-1.5">Products:</p>
                         <div className="space-y-1">
                           {sale.products.map((product, idx) => (
-                            <div key={idx} className="text-sm text-gray-600 flex justify-between">
-                              <span>{product.ProductName} x{product.Quantity}</span>
-                              <span>R{(product.Price * product.Quantity).toFixed(2)}</span>
+                            <div key={idx} className="text-xs text-gray-600 flex justify-between">
+                              <span className="truncate mr-2">{product.ProductName} x{product.Quantity}</span>
+                              <span className="flex-shrink-0">R{(product.Price * product.Quantity).toFixed(2)}</span>
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
-                    <div className="flex items-center justify-between pt-3 border-t">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${sale.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+
+                    <div className="flex items-center justify-between pt-3 border-t gap-2">
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${
+                        sale.status === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
+                      }`}>
                         {sale.status === 'paid' ? 'Paid' : 'Pending'}
                       </span>
                       {sale.status === 'pending' && (
                         <Button onClick={() => handlePayCommission(selectedAffiliate, sale.id, sale.commission)}
-                          disabled={processingPayment === sale.id} size="sm" className="bg-green-500 hover:bg-green-600">
-                          <DollarSign className="w-4 h-4 mr-1" />
-                          {processingPayment === sale.id ? 'Processing...' : 'Mark as Paid'}
+                          disabled={processingPayment === sale.id} size="sm"
+                          className="bg-green-500 hover:bg-green-600 text-xs h-7">
+                          {processingPayment === sale.id
+                            ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />Processing...</>
+                            : <><DollarSign className="w-3.5 h-3.5 mr-1" />Mark as Paid</>
+                          }
                         </Button>
                       )}
                     </div>
@@ -460,8 +501,8 @@ export default function Affiliation() {
                 ))}
                 {getFilteredSales(selectedAffiliate.sales).length === 0 && (
                   <div className="text-center py-8 text-gray-500">
-                    <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p>No {filterStatus !== 'all' ? filterStatus : ''} sales found</p>
+                    <ShoppingCart className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                    <p className="text-sm">No {filterStatus !== 'all' ? filterStatus : ''} sales found</p>
                   </div>
                 )}
               </div>

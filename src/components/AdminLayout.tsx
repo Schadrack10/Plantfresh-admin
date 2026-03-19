@@ -1,4 +1,4 @@
-import { LayoutDashboard, User2Icon, Image, Package, Star, MessageSquare, FileText, LogOut, Handshake } from "lucide-react";
+import { LayoutDashboard, User2Icon, KeyRound, Image, Package, Star, MessageSquare, FileText, LogOut, Handshake } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,7 @@ import {
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Users", url: "/users", icon: User2Icon },
-  { title: "Auth Management", url: "/auth-manager", icon: User2Icon },
+  { title: "Auth Management", url: "/auth-manager", icon: KeyRound },
   { title: "Banner Managment", url: "/banner", icon: Image },
   { title: "Products", url: "/products", icon: Package },
   { title: "Features", url: "/features", icon: Star },
