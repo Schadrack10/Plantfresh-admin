@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Package, Image, Star, FileText } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
 import AppContext from "../context/AppContext";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc } from "firebase/firestore";
 
 export default function Dashboard() {
   const { globalState, db, setGlobalState } = useContext(AppContext);
@@ -30,12 +30,14 @@ export default function Dashboard() {
 
   /* Fetch blog count */
   useEffect(() => {
-    const fetchBlogCount = async () => {
-      if (!db) return;
-
-      const snapshot = await getDocs(collection(db, "Blogs"));
-      setBlogCount(snapshot.size);
-    };
+const fetchBlogCount = async () => {
+  if (!db) return;
+  const snap = await getDoc(doc(db, 'StoreConfigs', 'StoreConfig001'));
+  if (snap.exists()) {
+    const posts = snap.data()?.BlogCustomization?.posts || [];
+    setBlogCount(posts.length);
+  }
+};
 
     fetchBlogCount();
   }, [db]);
