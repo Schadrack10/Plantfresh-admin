@@ -17,7 +17,6 @@ import {
 import AppContext from "../context/AppContext";
 import UsefireFunctionsHook from "../utility/usefirebaseFuncHook";
 import { useToast } from "@/hooks/use-toast";
-import { getStorage, ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { collection, getDocs } from "firebase/firestore";
 
 // ─── Icon registry ────────────────────────────────────────────────────────────
@@ -117,53 +116,129 @@ const Section = ({ title, icon: Icon, children, defaultOpen = false, preview }: 
   );
 };
 
-// ─── Image upload slot ────────────────────────────────────────────────────────
-const ImageUploadSlot = ({ url, onUrlChange, storage, path }: any) => {
+// ─── Image compression helper (same as Blog.tsx) ─────────────────────────────
+const compressImage = (file: File, maxWidth: number, quality: number): Promise<Blob> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('Canvas context unavailable'));
+        return;
+      }
+
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        blob => {
+          URL.revokeObjectURL(objectUrl);
+          blob ? resolve(blob) : reject(new Error('Image compression failed'));
+        },
+        'image/jpeg',
+        quality
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Failed to load image'));
+    };
+
+    img.src = objectUrl;
+  });
+};
+
+// ─── Image upload slot — compresses to base64 ────────────────────────────────
+// Images are stored in a SEPARATE Firestore document (StoreConfig001_images)
+// so the main config document stays well under the 1MB Firestore limit.
+// No Firebase Storage needed — no CORS issues.
+const ImageUploadSlot = ({ url, onUrlChange }: { url: string; onUrlChange: (v: string) => void }) => {
   const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [progress,  setProgress]  = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Don't render stale __img: placeholders from old save logic
+  const displayUrl = !url || url.startsWith('__img:') ? '' : url;
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!storage) {
-      const reader = new FileReader();
-      reader.onload = ev => onUrlChange(ev.target?.result as string);
-      reader.readAsDataURL(file);
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: 'File too large', description: 'Please upload an image under 10 MB.', variant: 'destructive' });
       return;
     }
+
+    setUploading(true);
+    setProgress(10);
+
     try {
-      setUploading(true);
-      const storageRef = ref(storage, `${path}_${Date.now()}_${file.name}`);
-      const task = uploadBytesResumable(storageRef, file);
-      await new Promise<void>((resolve, reject) => {
-        task.on('state_changed',
-          snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
-          reject,
-          async () => { onUrlChange(await getDownloadURL(task.snapshot.ref)); resolve(); }
-        );
+      // Compress aggressively — 500px wide, 0.65 quality → ~30-60 KB base64
+      const compressed = await compressImage(file, 500, 0.65);
+      setProgress(60);
+
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(compressed);
       });
-      toast({ title: '✅ Image uploaded' });
+
+      const kb = (new Blob([base64]).size / 1024).toFixed(1);
+      console.log(`📦 [ImageUploadSlot] base64: ${kb} KB`);
+
+      setProgress(100);
+      onUrlChange(base64);
+      toast({ title: '✅ Image ready', description: `${kb} KB — saved in separate document` });
     } catch (err: any) {
-      toast({ title: '❌ Upload failed', description: err.message, variant: 'destructive' });
-    } finally { setUploading(false); setProgress(0); if (fileRef.current) fileRef.current.value = ''; }
+      console.error('❌ [ImageUploadSlot]', err);
+      toast({ title: '❌ Failed', description: err?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+      setProgress(0);
+      if (fileRef.current) fileRef.current.value = '';
+    }
   };
 
   return (
     <div className="space-y-2">
-      <Input value={url || ''} onChange={e => onUrlChange(e.target.value)}
-        placeholder="Paste image URL or upload" className="bg-gray-50 text-xs h-8" />
+      <Input
+        value={displayUrl}
+        onChange={e => onUrlChange(e.target.value)}
+        placeholder="Paste image URL or upload below"
+        className="bg-gray-50 text-xs h-8"
+      />
       <label className="block cursor-pointer">
-        <div className={`border-2 border-dashed rounded-lg p-2.5 text-center transition-colors ${uploading ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50'}`}>
-          {uploading
-            ? <div className="flex items-center justify-center gap-2 text-emerald-600 text-xs"><Loader2 className="w-3.5 h-3.5 animate-spin" />{progress}%</div>
-            : <div className="flex items-center justify-center gap-2 text-slate-500 text-xs"><Upload className="w-3.5 h-3.5" />Upload image</div>}
+        <div className={`border-2 border-dashed rounded-lg p-2.5 text-center transition-colors ${
+          uploading ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50'
+        }`}>
+          {uploading ? (
+            <div className="space-y-1">
+              <div className="flex items-center justify-center gap-2 text-emerald-600 text-xs">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing… {progress}%
+              </div>
+              <div className="w-full bg-emerald-100 rounded-full h-1">
+                <div className="bg-emerald-500 h-1 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 text-slate-500 text-xs">
+              <Upload className="w-3.5 h-3.5" /> Upload image
+            </div>
+          )}
         </div>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" disabled={uploading} onChange={handleFile} />
       </label>
-      {url && !url.startsWith('data:') && (
-        <img src={url} alt="" className="w-full h-24 object-cover rounded-lg border border-gray-200"
+      {displayUrl && (
+        <img src={displayUrl} alt="" className="w-full h-24 object-cover rounded-lg border border-gray-200"
           onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
       )}
     </div>
@@ -416,7 +491,6 @@ export default function Features() {
   const { globalState, setGlobalState, db } = useContext(AppContext);
   const { updateStoreConfig } = UsefireFunctionsHook();
   const { toast } = useToast();
-  const storage = getStorage();
 
   const [config, setConfig] = useState(globalState.StoreConfig || {});
   const [featuresConfig, setFeaturesConfig] = useState<typeof DEFAULT_FEATURES>(DEFAULT_FEATURES);
@@ -427,7 +501,6 @@ export default function Features() {
   const [productCategories, setProductCategories] = useState<{ id: string; label: string; count: number }[]>([]);
   const [fetchingCategories, setFetchingCategories] = useState(false);
 
-  // Fetch unique categories from Products collection
   const fetchProductCategories = async () => {
     if (!db) return;
     setFetchingCategories(true);
@@ -440,11 +513,7 @@ export default function Features() {
         if (cat) countMap.set(cat, (countMap.get(cat) || 0) + 1);
       });
       const derived = Array.from(countMap.entries())
-        .map(([id, count]) => ({
-          id,
-          label: id.charAt(0).toUpperCase() + id.slice(1),
-          count,
-        }))
+        .map(([id, count]) => ({ id, label: id.charAt(0).toUpperCase() + id.slice(1), count }))
         .sort((a, b) => a.label.localeCompare(b.label));
       setProductCategories(derived);
       return derived;
@@ -457,21 +526,13 @@ export default function Features() {
     }
   };
 
-  // Auto-populate room cards from product categories if no rooms saved yet
   const autoPopulateRooms = async (cats: { id: string; label: string; count: number }[]) => {
     if (cats.length === 0) return;
-    const populated = cats.map(cat => ({
-      id: uid(),
-      name: cat.label,
-      productCount: cat.count,
-      categoryId: cat.id,
-      imageUrl: '',
-    }));
+    const populated = cats.map(cat => ({ id: uid(), name: cat.label, productCount: cat.count, categoryId: cat.id, imageUrl: '' }));
     setRoomsConfig(prev => ({ ...prev, rooms: populated }));
     toast({ title: `✅ Auto-populated ${populated.length} room cards from your products` });
   };
 
-  // Load config on mount
   useEffect(() => {
     const storedConfig = JSON.parse(localStorage.getItem("StoreConfig") || "{}");
     const authenticatedUser = JSON.parse(localStorage.getItem("AuthenticatedUser") || "{}");
@@ -489,11 +550,33 @@ export default function Features() {
 
       const savedRooms = merged?.HomeCustomization?.roomsSection;
       if (savedRooms && savedRooms.rooms?.length > 0) {
-        // Rooms already saved — load them + fetch categories for the dropdown
-        setRoomsConfig({ ...DEFAULT_ROOMS, ...savedRooms });
+        // Resolve __ref: keys and clear __img: placeholders
+        const hasRefs = savedRooms.rooms.some((r: any) => r.imageUrl?.startsWith('__ref:'));
+        if (hasRefs) {
+          // Load the images doc to resolve base64 references — use db from AppContext
+          import('firebase/firestore').then(({ doc: fsDoc, getDoc: fsGetDoc }) => {
+            fsGetDoc(fsDoc(db, 'StoreConfigs', 'StoreConfig001_images')).then(snap => {
+              const imgData = snap.data() || {};
+              const resolvedRooms = savedRooms.rooms.map((room: any) => {
+                if (room.imageUrl?.startsWith('__ref:')) {
+                  const key = room.imageUrl.replace('__ref:', '');
+                  return { ...room, imageUrl: imgData[key] || '' };
+                }
+                if (room.imageUrl?.startsWith('__img:')) return { ...room, imageUrl: '' };
+                return room;
+              });
+              setRoomsConfig({ ...DEFAULT_ROOMS, ...savedRooms, rooms: resolvedRooms });
+            });
+          });
+        } else {
+          const cleanRooms = savedRooms.rooms.map((room: any) => ({
+            ...room,
+            imageUrl: room.imageUrl?.startsWith('__img:') ? '' : (room.imageUrl || ''),
+          }));
+          setRoomsConfig({ ...DEFAULT_ROOMS, ...savedRooms, rooms: cleanRooms });
+        }
         fetchProductCategories();
       } else {
-        // No rooms saved yet — fetch categories and auto-populate
         fetchProductCategories().then(cats => {
           if (cats && cats.length > 0) autoPopulateRooms(cats);
         });
@@ -515,41 +598,78 @@ export default function Features() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Update product counts from live data before saving
       const updatedRooms = roomsConfig.rooms.map(room => {
         const match = productCategories.find(c => c.id === room.categoryId);
-        return match ? { ...room, productCount: match.count } : room;
+        const imageUrl = room.imageUrl?.startsWith('__img:') ? '' : (room.imageUrl || '');
+        return { ...(match ? { ...room, productCount: match.count } : room), imageUrl };
       });
-      const finalRooms = { ...roomsConfig, rooms: updatedRooms };
+
+      // ── Split: strip base64 images out of main doc ──────────────────────
+      // Main doc stores a short placeholder key per room instead of the base64.
+      // The actual base64 goes into StoreConfig001_images (separate 1MB budget).
+      const imagesPayload: Record<string, string> = {};
+      const roomsForMainDoc = updatedRooms.map(room => {
+        if (room.imageUrl?.startsWith('data:')) {
+          const key = `room_${room.id}`;
+          imagesPayload[key] = room.imageUrl;          // save real base64 here
+          return { ...room, imageUrl: `__ref:${key}` }; // store tiny reference key
+        }
+        return room;
+      });
 
       const merged = {
         ...config,
         HomeCustomization: {
           ...(config.HomeCustomization || {}),
           featuresSection: featuresConfig,
-          roomsSection: finalRooms,
+          roomsSection: { ...roomsConfig, rooms: roomsForMainDoc },
         },
       };
+
+      const mainKB = (new Blob([JSON.stringify(merged)]).size / 1024).toFixed(1);
+      console.log(`💾 [handleSave] Main doc: ${mainKB} KB`);
+
+      // Save main config (no base64 images — stays small)
       setGlobalState({ ...globalState, StoreConfig: merged });
-      localStorage.setItem("StoreConfig", JSON.stringify(merged));
-      await updateStoreConfig("StoreConfig001", merged);
-      toast({ title: "✅ Saved", description: "Configuration updated successfully." });
-    } catch {
-      toast({ title: "❌ Save failed", variant: "destructive" });
+      localStorage.setItem('StoreConfig', JSON.stringify(merged));
+      await updateStoreConfig('StoreConfig001', merged);
+
+      // Save images doc separately using db from AppContext
+      if (Object.keys(imagesPayload).length > 0) {
+        const imagesKB = (new Blob([JSON.stringify(imagesPayload)]).size / 1024).toFixed(1);
+        console.log(`🖼️ [handleSave] Images doc: ${imagesKB} KB`);
+        const { doc: fsDoc, setDoc: fsSetDoc, getDoc: fsGetDoc } = await import('firebase/firestore');
+        const imgRef = fsDoc(db, 'StoreConfigs', 'StoreConfig001_images');
+        const existing = (await fsGetDoc(imgRef)).data() || {};
+        await fsSetDoc(imgRef, { ...existing, ...imagesPayload }, { merge: true });
+      }
+
+      toast({ title: '✅ Saved', description: 'Configuration updated successfully.' });
+
+    } catch (err: any) {
+      console.error('❌ [handleSave]', err?.code, err?.message);
+      toast({ title: '❌ Save failed', description: err?.message || 'Check browser console.', variant: 'destructive' });
     } finally {
       setSaving(false);
     }
   };
 
   const handleLogoUpload = async (e: any) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
-    const uid2 = globalState?.AuthenticatedUser?.uid || "defaultAdmin";
-    const fileRef = ref(storage, `store/${uid2}/navbar/logo_${Date.now()}`);
-    const { uploadBytes, getDownloadURL: getUrl } = await import("firebase/storage");
-    await uploadBytes(fileRef, file);
-    handleChange("NavbarCustomization.logoURL", await getUrl(fileRef));
-    toast({ title: "Logo uploaded" });
+    try {
+      const compressed = await compressImage(file, 400, 0.8);
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(compressed);
+      });
+      handleChange('NavbarCustomization.logoURL', base64);
+      toast({ title: '✅ Logo ready' });
+    } catch (err: any) {
+      toast({ title: '❌ Logo upload failed', description: err.message, variant: 'destructive' });
+    }
   };
 
   // Feature item helpers
@@ -564,14 +684,12 @@ export default function Features() {
   const updateRoom = (id: string, key: string, val: any) =>
     setRoomsConfig(p => ({ ...p, rooms: p.rooms.map(r => r.id === id ? { ...r, [key]: val } : r) }));
 
-  // When a category is selected from dropdown, also update the name and count
   const handleRoomCategorySelect = (roomId: string, categoryId: string) => {
     const cat = productCategories.find(c => c.id === categoryId);
     setRoomsConfig(p => ({
       ...p,
       rooms: p.rooms.map(r => r.id === roomId ? {
-        ...r,
-        categoryId,
+        ...r, categoryId,
         name: cat ? cat.label : r.name,
         productCount: cat ? cat.count : r.productCount,
       } : r),
@@ -646,7 +764,6 @@ export default function Features() {
 
       {/* ── Shop by Room ─────────────────────────────────────────────────── */}
       <Section title="Shop by Room / Category" icon={HomeIcon} preview={<RoomsPreview cfg={roomsConfig} />}>
-        {/* Sync banner */}
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
@@ -708,7 +825,6 @@ export default function Features() {
                   <Label className="text-xs text-slate-500">Display Name</Label>
                   <Input value={room.name} onChange={e => updateRoom(room.id, 'name', e.target.value)} className="bg-gray-50" />
                 </div>
-
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-500">
                     Category ID
@@ -716,7 +832,6 @@ export default function Features() {
                   </Label>
                   {productCategories.length > 0 ? (
                     <div className="space-y-1.5">
-                      {/* Dropdown from actual product categories */}
                       <select
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
                         value={room.categoryId}
@@ -724,13 +839,10 @@ export default function Features() {
                       >
                         <option value="">— Select category —</option>
                         {productCategories.map(cat => (
-                          <option key={cat.id} value={cat.id}>
-                            {cat.label} ({cat.count} products)
-                          </option>
+                          <option key={cat.id} value={cat.id}>{cat.label} ({cat.count} products)</option>
                         ))}
                         <option value="__custom__">✏️ Type custom ID...</option>
                       </select>
-                      {/* Show manual input if custom selected or value not in list */}
                       {(room.categoryId === '__custom__' || (room.categoryId && !productCategories.find(c => c.id === room.categoryId))) && (
                         <Input value={room.categoryId === '__custom__' ? '' : room.categoryId}
                           onChange={e => updateRoom(room.id, 'categoryId', e.target.value.toLowerCase())}
@@ -744,7 +856,6 @@ export default function Features() {
                   )}
                   <p className="text-[10px] text-slate-400">/products?category={room.categoryId}</p>
                 </div>
-
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-500">
                     Product Count
@@ -758,10 +869,13 @@ export default function Features() {
                 </div>
               </div>
 
+              {/* ── Room image — base64 upload, same as Blog.tsx ── */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500">Room Image</Label>
-                <ImageUploadSlot url={room.imageUrl} onUrlChange={(v: string) => updateRoom(room.id, 'imageUrl', v)}
-                  storage={storage} path={`store/home/rooms/room_${room.id}`} />
+                <ImageUploadSlot
+                  url={room.imageUrl}
+                  onUrlChange={(v: string) => updateRoom(room.id, 'imageUrl', v)}
+                />
               </div>
             </div>
           ))}
