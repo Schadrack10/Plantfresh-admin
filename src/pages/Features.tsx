@@ -103,7 +103,7 @@ const Section = ({ title, icon: Icon, children, defaultOpen = false, preview }: 
         <CardContent className="space-y-5 pt-0">
           {preview && (
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-600 border-0 border-none">
                 <Eye className="w-4 h-4" /> Live Preview
               </div>
               {preview}
@@ -116,142 +116,86 @@ const Section = ({ title, icon: Icon, children, defaultOpen = false, preview }: 
   );
 };
 
-// ─── Image compression helper (same as Blog.tsx) ─────────────────────────────
+// ─── Image compression helper ─────────────────────────────────────────────────
 const compressImage = (file: File, maxWidth: number, quality: number): Promise<Blob> => {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const objectUrl = URL.createObjectURL(file);
-
     img.onload = () => {
       const scale = Math.min(1, maxWidth / img.width);
       const canvas = document.createElement('canvas');
       canvas.width = img.width * scale;
       canvas.height = img.height * scale;
-
       const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error('Canvas context unavailable'));
-        return;
-      }
-
+      if (!ctx) { URL.revokeObjectURL(objectUrl); reject(new Error('Canvas context unavailable')); return; }
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        blob => {
-          URL.revokeObjectURL(objectUrl);
-          blob ? resolve(blob) : reject(new Error('Image compression failed'));
-        },
-        'image/jpeg',
-        quality
-      );
+      canvas.toBlob(blob => { URL.revokeObjectURL(objectUrl); blob ? resolve(blob) : reject(new Error('Image compression failed')); }, 'image/jpeg', quality);
     };
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error('Failed to load image'));
-    };
-
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error('Failed to load image')); };
     img.src = objectUrl;
   });
 };
 
-// ─── Image upload slot — compresses to base64 ────────────────────────────────
-// Images are stored in a SEPARATE Firestore document (StoreConfig001_images)
-// so the main config document stays well under the 1MB Firestore limit.
-// No Firebase Storage needed — no CORS issues.
+// ─── Image upload slot ────────────────────────────────────────────────────────
 const ImageUploadSlot = ({ url, onUrlChange }: { url: string; onUrlChange: (v: string) => void }) => {
   const [uploading, setUploading] = useState(false);
-  const [progress,  setProgress]  = useState(0);
+  const [progress, setProgress] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
-
-  // Don't render stale __img: placeholders from old save logic
   const displayUrl = !url || url.startsWith('__img:') ? '' : url;
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast({ title: 'File too large', description: 'Please upload an image under 10 MB.', variant: 'destructive' });
-      return;
-    }
-
-    setUploading(true);
-    setProgress(10);
-
+    if (file.size > 10 * 1024 * 1024) { toast({ title: 'File too large', description: 'Please upload an image under 10 MB.', variant: 'destructive' }); return; }
+    setUploading(true); setProgress(10);
     try {
-      // Compress aggressively — 500px wide, 0.65 quality → ~30-60 KB base64
       const compressed = await compressImage(file, 500, 0.65);
       setProgress(60);
-
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload  = () => resolve(reader.result as string);
+        reader.onload = () => resolve(reader.result as string);
         reader.onerror = reject;
         reader.readAsDataURL(compressed);
       });
-
       const kb = (new Blob([base64]).size / 1024).toFixed(1);
-      console.log(`📦 [ImageUploadSlot] base64: ${kb} KB`);
-
       setProgress(100);
       onUrlChange(base64);
       toast({ title: '✅ Image ready', description: `${kb} KB — saved in separate document` });
     } catch (err: any) {
-      console.error('❌ [ImageUploadSlot]', err);
       toast({ title: '❌ Failed', description: err?.message || 'Unknown error', variant: 'destructive' });
     } finally {
-      setUploading(false);
-      setProgress(0);
+      setUploading(false); setProgress(0);
       if (fileRef.current) fileRef.current.value = '';
     }
   };
 
   return (
     <div className="space-y-2">
-      <Input
-        value={displayUrl}
-        onChange={e => onUrlChange(e.target.value)}
-        placeholder="Paste image URL or upload below"
-        className="bg-gray-50 text-xs h-8"
-      />
+      <Input value={displayUrl} onChange={e => onUrlChange(e.target.value)} placeholder="Paste image URL or upload below" className="bg-gray-50 text-xs h-8" />
       <label className="block cursor-pointer">
-        <div className={`border-2 border-dashed rounded-lg p-2.5 text-center transition-colors ${
-          uploading ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50'
-        }`}>
+        <div className={`border-2 border-dashed rounded-lg p-2.5 text-center transition-colors ${uploading ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50'}`}>
           {uploading ? (
             <div className="space-y-1">
-              <div className="flex items-center justify-center gap-2 text-emerald-600 text-xs">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing… {progress}%
-              </div>
-              <div className="w-full bg-emerald-100 rounded-full h-1">
-                <div className="bg-emerald-500 h-1 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
-              </div>
+              <div className="flex items-center justify-center gap-2 text-emerald-600 text-xs"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Processing… {progress}%</div>
+              <div className="w-full bg-emerald-100 rounded-full h-1"><div className="bg-emerald-500 h-1 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} /></div>
             </div>
           ) : (
-            <div className="flex items-center justify-center gap-2 text-slate-500 text-xs">
-              <Upload className="w-3.5 h-3.5" /> Upload image
-            </div>
+            <div className="flex items-center justify-center gap-2 text-slate-500 text-xs"><Upload className="w-3.5 h-3.5" /> Upload image</div>
           )}
         </div>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" disabled={uploading} onChange={handleFile} />
       </label>
-      {displayUrl && (
-        <img src={displayUrl} alt="" className="w-full h-24 object-cover rounded-lg border border-gray-200"
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-      )}
+      {displayUrl && <img src={displayUrl} alt="" className="w-full h-24 object-cover rounded-lg border border-gray-200" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
     </div>
   );
 };
 
 // ─── Previews ─────────────────────────────────────────────────────────────────
 const FeaturesPreview = ({ cfg }: { cfg: typeof DEFAULT_FEATURES }) => (
-  <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm p-5"
-    style={{ backgroundColor: cfg.backgroundColor }}>
+  <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm p-5" style={{ backgroundColor: cfg.backgroundColor }}>
     <div className="text-center mb-4">
-      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium mb-2"
-        style={{ backgroundColor: cfg.badgeBg, color: cfg.badgeTextColor }}>
+      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium mb-2" style={{ backgroundColor: cfg.badgeBg, color: cfg.badgeTextColor }}>
         <Award className="w-3 h-3" />{cfg.badgeText}
       </div>
       <h2 className="text-sm font-bold mb-1" style={{ color: cfg.headingColor }}>
@@ -264,10 +208,8 @@ const FeaturesPreview = ({ cfg }: { cfg: typeof DEFAULT_FEATURES }) => (
       {cfg.items.slice(0, 4).map(item => {
         const Icon = getIcon(item.icon);
         return (
-          <div key={item.id} className="border p-3 text-center"
-            style={{ backgroundColor: cfg.cardBg, borderColor: cfg.cardBorder, borderRadius: `${cfg.cardRadius}px` }}>
-            <div className="w-8 h-8 mx-auto mb-1.5 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: `${cfg.iconColor}20` }}>
+          <div key={item.id} className="border p-3 text-center" style={{ backgroundColor: cfg.cardBg, borderColor: cfg.cardBorder, borderRadius: `${cfg.cardRadius}px` }}>
+            <div className="w-8 h-8 mx-auto mb-1.5 rounded-full flex items-center justify-center" style={{ backgroundColor: `${cfg.iconColor}20` }}>
               <Icon className="w-4 h-4" style={{ color: cfg.iconColor }} />
             </div>
             <p className="font-semibold text-[10px] mb-0.5 truncate" style={{ color: cfg.headingColor }}>{item.title}</p>
@@ -280,22 +222,15 @@ const FeaturesPreview = ({ cfg }: { cfg: typeof DEFAULT_FEATURES }) => (
 );
 
 const RoomsPreview = ({ cfg }: { cfg: typeof DEFAULT_ROOMS }) => (
-  <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm p-4"
-    style={{ backgroundColor: cfg.backgroundColor }}>
+  <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm p-4" style={{ backgroundColor: cfg.backgroundColor }}>
     <h2 className="text-sm font-bold mb-3" style={{ color: cfg.headingColor }}>{cfg.heading}</h2>
     {cfg.rooms.length === 0 ? (
       <p className="text-xs text-slate-400 text-center py-4">No room cards yet — add some below or sync from products.</p>
     ) : (
       <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(cfg.rooms.length, 6)}, 1fr)` }}>
         {cfg.rooms.slice(0, 6).map(room => (
-          <div key={room.id} className="relative overflow-hidden aspect-square"
-            style={{ borderRadius: `${cfg.cardRadius}px` }}>
-            {room.imageUrl
-              ? <img src={room.imageUrl} alt={room.name} className="w-full h-full object-cover" />
-              : <div className="w-full h-full bg-slate-300 flex items-center justify-center">
-                  <HomeIcon className="w-4 h-4 text-slate-400" />
-                </div>
-            }
+          <div key={room.id} className="relative overflow-hidden aspect-square" style={{ borderRadius: `${cfg.cardRadius}px` }}>
+            {room.imageUrl ? <img src={room.imageUrl} alt={room.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-300 flex items-center justify-center"><HomeIcon className="w-4 h-4 text-slate-400" /></div>}
             <div className="absolute inset-0 bg-black/40 flex flex-col justify-end p-1">
               <p className="text-white font-bold text-[8px] leading-tight truncate">{room.name}</p>
               <p className="text-white/70 text-[7px]">{room.productCount} Products</p>
@@ -311,9 +246,7 @@ const NavbarPreview = ({ cfg, primaryColor }: any) => (
   <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
     <div className="flex items-center justify-between px-4 py-3" style={{ backgroundColor: cfg?.background || '#ffffff' }}>
       <div className="flex items-center gap-2">
-        {cfg?.logoURL
-          ? <img src={cfg.logoURL} alt="Logo" className="h-6 object-contain" />
-          : <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: primaryColor }}><Leaf className="w-3.5 h-3.5 text-white" /></div>}
+        {cfg?.logoURL ? <img src={cfg.logoURL} alt="Logo" className="h-6 object-contain" /> : <div className="w-6 h-6 rounded flex items-center justify-center" style={{ background: primaryColor }}><Leaf className="w-3.5 h-3.5 text-white" /></div>}
         <span className="font-bold text-sm" style={{ color: primaryColor }}>PlantFresh</span>
       </div>
       <div className="hidden sm:flex items-center gap-4">
@@ -417,9 +350,7 @@ const ProductCardPreview = ({ cfg, primaryColor }: any) => {
 const AboutPreview = ({ cfg, primaryColor }: any) => (
   <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm p-4 space-y-3">
     <div className="flex gap-3">
-      {cfg?.content?.storyImageURL
-        ? <img src={cfg.content.storyImageURL} alt="Story" className="w-20 h-20 object-cover rounded-lg flex-shrink-0" />
-        : <div className="w-20 h-20 bg-slate-200 rounded-lg flex-shrink-0 flex items-center justify-center"><ImageIcon className="w-6 h-6 text-slate-400" /></div>}
+      {cfg?.content?.storyImageURL ? <img src={cfg.content.storyImageURL} alt="Story" className="w-20 h-20 object-cover rounded-lg flex-shrink-0" /> : <div className="w-20 h-20 bg-slate-200 rounded-lg flex-shrink-0 flex items-center justify-center"><ImageIcon className="w-6 h-6 text-slate-400" /></div>}
       <div className="min-w-0">
         <p className="font-bold text-sm truncate" style={{ color: primaryColor }}>{cfg?.content?.storyTitle || 'Our Story'}</p>
         <p className="text-xs text-slate-500 line-clamp-3 mt-1">{cfg?.content?.storyParagraph1 || 'Founded with a passion for eco-friendly cleaning...'}</p>
@@ -440,7 +371,7 @@ const CartPreview = ({ cfg, primaryColor }: any) => (
   <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm p-4">
     <div className="space-y-2">
       {[['Eco Spray x1','R129.99'],['Floor Cleaner x2','R239.98']].map(([name, price]) => (
-        <div key={name} className="flex justify-between text-xs py-1.5 border-b border-slate-100">
+        <div key={name} className="flex justify-between text-xs py-1.5 border-slate-100">
           <span className="text-slate-700">{name}</span><span className="font-semibold">{price}</span>
         </div>
       ))}
@@ -497,7 +428,6 @@ export default function Features() {
   const [roomsConfig, setRoomsConfig] = useState<typeof DEFAULT_ROOMS>(DEFAULT_ROOMS);
   const [saving, setSaving] = useState(false);
 
-  // ── Product categories fetched from Firestore ─────────────────────────────
   const [productCategories, setProductCategories] = useState<{ id: string; label: string; count: number }[]>([]);
   const [fetchingCategories, setFetchingCategories] = useState(false);
 
@@ -550,18 +480,13 @@ export default function Features() {
 
       const savedRooms = merged?.HomeCustomization?.roomsSection;
       if (savedRooms && savedRooms.rooms?.length > 0) {
-        // Resolve __ref: keys and clear __img: placeholders
         const hasRefs = savedRooms.rooms.some((r: any) => r.imageUrl?.startsWith('__ref:'));
         if (hasRefs) {
-          // Load the images doc to resolve base64 references — use db from AppContext
           import('firebase/firestore').then(({ doc: fsDoc, getDoc: fsGetDoc }) => {
             fsGetDoc(fsDoc(db, 'StoreConfigs', 'StoreConfig001_images')).then(snap => {
               const imgData = snap.data() || {};
               const resolvedRooms = savedRooms.rooms.map((room: any) => {
-                if (room.imageUrl?.startsWith('__ref:')) {
-                  const key = room.imageUrl.replace('__ref:', '');
-                  return { ...room, imageUrl: imgData[key] || '' };
-                }
+                if (room.imageUrl?.startsWith('__ref:')) { const key = room.imageUrl.replace('__ref:', ''); return { ...room, imageUrl: imgData[key] || '' }; }
                 if (room.imageUrl?.startsWith('__img:')) return { ...room, imageUrl: '' };
                 return room;
               });
@@ -569,17 +494,12 @@ export default function Features() {
             });
           });
         } else {
-          const cleanRooms = savedRooms.rooms.map((room: any) => ({
-            ...room,
-            imageUrl: room.imageUrl?.startsWith('__img:') ? '' : (room.imageUrl || ''),
-          }));
+          const cleanRooms = savedRooms.rooms.map((room: any) => ({ ...room, imageUrl: room.imageUrl?.startsWith('__img:') ? '' : (room.imageUrl || '') }));
           setRoomsConfig({ ...DEFAULT_ROOMS, ...savedRooms, rooms: cleanRooms });
         }
         fetchProductCategories();
       } else {
-        fetchProductCategories().then(cats => {
-          if (cats && cats.length > 0) autoPopulateRooms(cats);
-        });
+        fetchProductCategories().then(cats => { if (cats && cats.length > 0) autoPopulateRooms(cats); });
       }
     }
   }, []);
@@ -604,15 +524,12 @@ export default function Features() {
         return { ...(match ? { ...room, productCount: match.count } : room), imageUrl };
       });
 
-      // ── Split: strip base64 images out of main doc ──────────────────────
-      // Main doc stores a short placeholder key per room instead of the base64.
-      // The actual base64 goes into StoreConfig001_images (separate 1MB budget).
       const imagesPayload: Record<string, string> = {};
       const roomsForMainDoc = updatedRooms.map(room => {
         if (room.imageUrl?.startsWith('data:')) {
           const key = `room_${room.id}`;
-          imagesPayload[key] = room.imageUrl;          // save real base64 here
-          return { ...room, imageUrl: `__ref:${key}` }; // store tiny reference key
+          imagesPayload[key] = room.imageUrl;
+          return { ...room, imageUrl: `__ref:${key}` };
         }
         return room;
       });
@@ -626,18 +543,11 @@ export default function Features() {
         },
       };
 
-      const mainKB = (new Blob([JSON.stringify(merged)]).size / 1024).toFixed(1);
-      console.log(`💾 [handleSave] Main doc: ${mainKB} KB`);
-
-      // Save main config (no base64 images — stays small)
       setGlobalState({ ...globalState, StoreConfig: merged });
       localStorage.setItem('StoreConfig', JSON.stringify(merged));
       await updateStoreConfig('StoreConfig001', merged);
 
-      // Save images doc separately using db from AppContext
       if (Object.keys(imagesPayload).length > 0) {
-        const imagesKB = (new Blob([JSON.stringify(imagesPayload)]).size / 1024).toFixed(1);
-        console.log(`🖼️ [handleSave] Images doc: ${imagesKB} KB`);
         const { doc: fsDoc, setDoc: fsSetDoc, getDoc: fsGetDoc } = await import('firebase/firestore');
         const imgRef = fsDoc(db, 'StoreConfigs', 'StoreConfig001_images');
         const existing = (await fsGetDoc(imgRef)).data() || {};
@@ -645,9 +555,7 @@ export default function Features() {
       }
 
       toast({ title: '✅ Saved', description: 'Configuration updated successfully.' });
-
     } catch (err: any) {
-      console.error('❌ [handleSave]', err?.code, err?.message);
       toast({ title: '❌ Save failed', description: err?.message || 'Check browser console.', variant: 'destructive' });
     } finally {
       setSaving(false);
@@ -661,7 +569,7 @@ export default function Features() {
       const compressed = await compressImage(file, 400, 0.8);
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
-        reader.onload  = () => resolve(reader.result as string);
+        reader.onload = () => resolve(reader.result as string);
         reader.onerror = reject;
         reader.readAsDataURL(compressed);
       });
@@ -672,13 +580,11 @@ export default function Features() {
     }
   };
 
-  // Feature item helpers
   const addFeatureItem = () => setFeaturesConfig(p => ({ ...p, items: [...p.items, { id: uid(), icon: 'Leaf', title: 'New Feature', description: 'Description here' }] }));
   const removeFeatureItem = (id: string) => setFeaturesConfig(p => ({ ...p, items: p.items.filter(i => i.id !== id) }));
   const updateFeatureItem = (id: string, key: string, val: string) =>
     setFeaturesConfig(p => ({ ...p, items: p.items.map(i => i.id === id ? { ...i, [key]: val } : i) }));
 
-  // Room helpers
   const addRoom = () => setRoomsConfig(p => ({ ...p, rooms: [...p.rooms, { id: uid(), name: 'New Room', productCount: 0, categoryId: '', imageUrl: '' }] }));
   const removeRoom = (id: string) => setRoomsConfig(p => ({ ...p, rooms: p.rooms.filter(r => r.id !== id) }));
   const updateRoom = (id: string, key: string, val: any) =>
@@ -688,11 +594,7 @@ export default function Features() {
     const cat = productCategories.find(c => c.id === categoryId);
     setRoomsConfig(p => ({
       ...p,
-      rooms: p.rooms.map(r => r.id === roomId ? {
-        ...r, categoryId,
-        name: cat ? cat.label : r.name,
-        productCount: cat ? cat.count : r.productCount,
-      } : r),
+      rooms: p.rooms.map(r => r.id === roomId ? { ...r, categoryId, name: cat ? cat.label : r.name, productCount: cat ? cat.count : r.productCount } : r),
     }));
   };
 
@@ -701,14 +603,14 @@ export default function Features() {
   return (
     <div className="space-y-4 pb-12">
       {/* Sticky header */}
-      <div className="flex justify-between items-center sticky top-0 z-30 bg-white/95 backdrop-blur py-3 px-1 -mx-1 border-b border-slate-100">
+      <div className="flex justify-between items-center sticky top-0 z-30 bg-white/95 backdrop-blur py-3 px-1 -mx-1 border-slate-100">
         <h1 className="text-2xl md:text-3xl font-bold">Features & Store Config</h1>
         <Button onClick={handleSave} disabled={saving} className="bg-emerald-500 hover:bg-emerald-600">
           {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : 'Save All Changes'}
         </Button>
       </div>
 
-      {/* ── Features Section ────────────────────────────────────────────── */}
+      {/* ── Features Section ─────────────────────────────────────────────── */}
       <Section title="Features Section" icon={Sparkles} preview={<FeaturesPreview cfg={featuresConfig} />}>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5"><Label className="text-xs text-slate-500">Badge Text</Label><Input value={featuresConfig.badgeText} onChange={e => setFeaturesConfig(p => ({ ...p, badgeText: e.target.value }))} className="bg-white" /></div>
@@ -781,15 +683,11 @@ export default function Features() {
               )}
             </div>
             <div className="flex gap-2 flex-shrink-0">
-              <Button size="sm" variant="outline" onClick={() => fetchProductCategories()} disabled={fetchingCategories}
-                className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-100">
-                {fetchingCategories ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                Sync
+              <Button size="sm" variant="outline" onClick={() => fetchProductCategories()} disabled={fetchingCategories} className="gap-1.5 border-emerald-300 text-emerald-700 hover:bg-emerald-100">
+                {fetchingCategories ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}Sync
               </Button>
-              <Button size="sm" onClick={() => fetchProductCategories().then(cats => { if (cats && cats.length > 0) autoPopulateRooms(cats); })}
-                disabled={fetchingCategories} className="gap-1.5 bg-emerald-500 hover:bg-emerald-600">
-                <RefreshCw className="w-3.5 h-3.5" />
-                Re-populate All
+              <Button size="sm" onClick={() => fetchProductCategories().then(cats => { if (cats && cats.length > 0) autoPopulateRooms(cats); })} disabled={fetchingCategories} className="gap-1.5 bg-emerald-500 hover:bg-emerald-600">
+                <RefreshCw className="w-3.5 h-3.5" />Re-populate All
               </Button>
             </div>
           </div>
@@ -813,7 +711,6 @@ export default function Features() {
             </div>
             <Button size="sm" variant="outline" onClick={addRoom} className="gap-1.5"><Plus className="w-4 h-4" />Add Room</Button>
           </div>
-
           {roomsConfig.rooms.map((room, idx) => (
             <div key={room.id} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -827,20 +724,14 @@ export default function Features() {
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-500">
-                    Category ID
-                    {productCategories.length > 0 && <span className="text-emerald-500 ml-1">— pick from products</span>}
+                    Category ID{productCategories.length > 0 && <span className="text-emerald-500 ml-1">— pick from products</span>}
                   </Label>
                   {productCategories.length > 0 ? (
                     <div className="space-y-1.5">
-                      <select
-                        className="w-full border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        value={room.categoryId}
-                        onChange={e => handleRoomCategorySelect(room.id, e.target.value)}
-                      >
+                      <select className="w-full border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        value={room.categoryId} onChange={e => handleRoomCategorySelect(room.id, e.target.value)}>
                         <option value="">— Select category —</option>
-                        {productCategories.map(cat => (
-                          <option key={cat.id} value={cat.id}>{cat.label} ({cat.count} products)</option>
-                        ))}
+                        {productCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.label} ({cat.count} products)</option>)}
                         <option value="__custom__">✏️ Type custom ID...</option>
                       </select>
                       {(room.categoryId === '__custom__' || (room.categoryId && !productCategories.find(c => c.id === room.categoryId))) && (
@@ -850,32 +741,20 @@ export default function Features() {
                       )}
                     </div>
                   ) : (
-                    <Input value={room.categoryId}
-                      onChange={e => updateRoom(room.id, 'categoryId', e.target.value.toLowerCase())}
-                      placeholder="e.g. kitchen" className="bg-gray-50 font-mono text-sm" />
+                    <Input value={room.categoryId} onChange={e => updateRoom(room.id, 'categoryId', e.target.value.toLowerCase())} placeholder="e.g. kitchen" className="bg-gray-50 font-mono text-sm" />
                   )}
                   <p className="text-[10px] text-slate-400">/products?category={room.categoryId}</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs text-slate-500">
-                    Product Count
-                    {productCategories.find(c => c.id === room.categoryId) && (
-                      <span className="text-emerald-500 ml-1">— auto from Firestore</span>
-                    )}
+                    Product Count{productCategories.find(c => c.id === room.categoryId) && <span className="text-emerald-500 ml-1">— auto from Firestore</span>}
                   </Label>
-                  <Input type="number" value={room.productCount}
-                    onChange={e => updateRoom(room.id, 'productCount', Number(e.target.value))}
-                    className="bg-gray-50" />
+                  <Input type="number" value={room.productCount} onChange={e => updateRoom(room.id, 'productCount', Number(e.target.value))} className="bg-gray-50" />
                 </div>
               </div>
-
-              {/* ── Room image — base64 upload, same as Blog.tsx ── */}
               <div className="space-y-1.5">
                 <Label className="text-xs text-slate-500">Room Image</Label>
-                <ImageUploadSlot
-                  url={room.imageUrl}
-                  onUrlChange={(v: string) => updateRoom(room.id, 'imageUrl', v)}
-                />
+                <ImageUploadSlot url={room.imageUrl} onUrlChange={(v: string) => updateRoom(room.id, 'imageUrl', v)} />
               </div>
             </div>
           ))}
@@ -887,7 +766,7 @@ export default function Features() {
         <div className="space-y-4">
           <div><Label>Logo URL</Label><Input value={config.NavbarCustomization?.logoURL || ""} onChange={e => handleChange("NavbarCustomization.logoURL", e.target.value)} /></div>
           <div><Label>Upload Logo</Label><Input type="file" accept="image/*" onChange={handleLogoUpload} />{config.NavbarCustomization?.logoURL && <img src={config.NavbarCustomization.logoURL} alt="Logo" className="mt-2 h-16 object-contain" />}</div>
-          <div><Label>Background Color: {config.NavbarCustomization?.background}</Label><Input type="color" value={config.NavbarCustomization?.background || "#ffffff"} onChange={e => handleChange("NavbarCustomization.background", e.target.value)} /></div>
+          <ColorRow label="Background Color" value={config.NavbarCustomization?.background || "#ffffff"} onChange={(v: string) => handleChange("NavbarCustomization.background", v)} />
           <div className="flex items-center justify-between"><Label>Keep Navbar Sticky</Label><Checkbox checked={config.NavbarCustomization?.sticky || false} onCheckedChange={v => handleChange("NavbarCustomization.sticky", v)} /></div>
         </div>
       </Section>
@@ -895,10 +774,10 @@ export default function Features() {
       {/* ── Footer ───────────────────────────────────────────────────────── */}
       <Section title="Footer" icon={Layers} preview={<FooterPreview footerCfg={config.FooterCustomization} primaryColor={primaryColor} />}>
         <div className="space-y-4">
-          <div><Label>Background Color</Label><Input type="color" value={config.FooterCustomization?.backgroundColor || "#1e293b"} onChange={e => handleChange("FooterCustomization.backgroundColor", e.target.value)} /></div>
+          <ColorRow label="Background Color" value={config.FooterCustomization?.backgroundColor || "#1e293b"} onChange={(v: string) => handleChange("FooterCustomization.backgroundColor", v)} />
           <div><Label>Copyright Text</Label><Textarea value={config.FooterCustomization?.copyrightText || ""} onChange={e => handleChange("FooterCustomization.copyrightText", e.target.value)} /></div>
-          <div><Label>Main Color</Label><Input type="color" value={config.ThemeCustomization?.primaryColor || "#000000"} onChange={e => handleChange("ThemeCustomization.primaryColor", e.target.value)} /></div>
-          <div><Label>Accent Color</Label><Input type="color" value={config.ThemeCustomization?.secondaryColor || "#000000"} onChange={e => handleChange("ThemeCustomization.secondaryColor", e.target.value)} /></div>
+          <ColorRow label="Main Color" value={config.ThemeCustomization?.primaryColor || "#000000"} onChange={(v: string) => handleChange("ThemeCustomization.primaryColor", v)} />
+          <ColorRow label="Accent Color" value={config.ThemeCustomization?.secondaryColor || "#000000"} onChange={(v: string) => handleChange("ThemeCustomization.secondaryColor", v)} />
         </div>
       </Section>
 
@@ -911,22 +790,22 @@ export default function Features() {
               {["Inter","Poppins","Roboto","Lato","Montserrat","Open Sans"].map(f => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
-          <h3 className="font-semibold text-sm">Text Colors</h3>
-          <div><Label>Titles</Label><Input type="color" value={config.ThemeCustomization?.text?.heading || "#000000"} onChange={e => handleChange("ThemeCustomization.text.heading", e.target.value)} /></div>
-          <div><Label>Body</Label><Input type="color" value={config.ThemeCustomization?.text?.body || "#000000"} onChange={e => handleChange("ThemeCustomization.text.body", e.target.value)} /></div>
-          <div><Label>Highlights</Label><Input type="color" value={config.ThemeCustomization?.text?.highlight || "#000000"} onChange={e => handleChange("ThemeCustomization.text.highlight", e.target.value)} /></div>
-          <h3 className="font-semibold text-sm pt-2">Buttons</h3>
-          <div><Label>Button Color</Label><Input type="color" value={config.ThemeCustomization?.buttons?.primaryBg || "#000000"} onChange={e => handleChange("ThemeCustomization.buttons.primaryBg", e.target.value)} /></div>
-          <div><Label>Button Text Color</Label><Input type="color" value={config.ThemeCustomization?.buttons?.primaryText || "#ffffff"} onChange={e => handleChange("ThemeCustomization.buttons.primaryText", e.target.value)} /></div>
-          <h3 className="font-semibold text-sm pt-2">Cards</h3>
-          <div><Label>Card Color</Label><Input type="color" value={config.ThemeCustomization?.cards?.background || "#ffffff"} onChange={e => handleChange("ThemeCustomization.cards.background", e.target.value)} /></div>
-          <div><Label>Card Border</Label><Input type="color" value={config.ThemeCustomization?.cards?.border || "#e5e7eb"} onChange={e => handleChange("ThemeCustomization.cards.border", e.target.value)} /></div>
-          <h3 className="font-semibold text-sm pt-2">CTA Section</h3>
-          <div><Label>Background</Label><Input type="color" value={config.ThemeCustomization?.cta?.backgroundColor || "#000000"} onChange={e => handleChange("ThemeCustomization.cta.backgroundColor", e.target.value)} /></div>
-          <div><Label>Title Color</Label><Input type="color" value={config.ThemeCustomization?.cta?.headingText || "#ffffff"} onChange={e => handleChange("ThemeCustomization.cta.headingText", e.target.value)} /></div>
-          <div><Label>Body Color</Label><Input type="color" value={config.ThemeCustomization?.cta?.bodyText || "#e5e7eb"} onChange={e => handleChange("ThemeCustomization.cta.bodyText", e.target.value)} /></div>
-          <div><Label>CTA Button Color</Label><Input type="color" value={config.ThemeCustomization?.buttons?.secondaryBg || "#000000"} onChange={e => handleChange("ThemeCustomization.buttons.secondaryBg", e.target.value)} /></div>
-          <div><Label>CTA Button Text</Label><Input type="color" value={config.ThemeCustomization?.buttons?.secondaryText || "#ffffff"} onChange={e => handleChange("ThemeCustomization.buttons.secondaryText", e.target.value)} /></div>
+          <p className="font-semibold text-sm">Text Colors</p>
+          <ColorRow label="Titles" value={config.ThemeCustomization?.text?.heading || "#000000"} onChange={(v: string) => handleChange("ThemeCustomization.text.heading", v)} />
+          <ColorRow label="Body" value={config.ThemeCustomization?.text?.body || "#000000"} onChange={(v: string) => handleChange("ThemeCustomization.text.body", v)} />
+          <ColorRow label="Highlights" value={config.ThemeCustomization?.text?.highlight || "#000000"} onChange={(v: string) => handleChange("ThemeCustomization.text.highlight", v)} />
+          <p className="font-semibold text-sm pt-2">Buttons</p>
+          <ColorRow label="Button Color" value={config.ThemeCustomization?.buttons?.primaryBg || "#000000"} onChange={(v: string) => handleChange("ThemeCustomization.buttons.primaryBg", v)} />
+          <ColorRow label="Button Text Color" value={config.ThemeCustomization?.buttons?.primaryText || "#ffffff"} onChange={(v: string) => handleChange("ThemeCustomization.buttons.primaryText", v)} />
+          <p className="font-semibold text-sm pt-2">Cards</p>
+          <ColorRow label="Card Color" value={config.ThemeCustomization?.cards?.background || "#ffffff"} onChange={(v: string) => handleChange("ThemeCustomization.cards.background", v)} />
+          <ColorRow label="Card Border" value={config.ThemeCustomization?.cards?.border || "#e5e7eb"} onChange={(v: string) => handleChange("ThemeCustomization.cards.border", v)} />
+          <p className="font-semibold text-sm pt-2">CTA Section</p>
+          <ColorRow label="Background" value={config.ThemeCustomization?.cta?.backgroundColor || "#000000"} onChange={(v: string) => handleChange("ThemeCustomization.cta.backgroundColor", v)} />
+          <ColorRow label="Title Color" value={config.ThemeCustomization?.cta?.headingText || "#ffffff"} onChange={(v: string) => handleChange("ThemeCustomization.cta.headingText", v)} />
+          <ColorRow label="Body Color" value={config.ThemeCustomization?.cta?.bodyText || "#e5e7eb"} onChange={(v: string) => handleChange("ThemeCustomization.cta.bodyText", v)} />
+          <ColorRow label="CTA Button Color" value={config.ThemeCustomization?.buttons?.secondaryBg || "#000000"} onChange={(v: string) => handleChange("ThemeCustomization.buttons.secondaryBg", v)} />
+          <ColorRow label="CTA Button Text" value={config.ThemeCustomization?.buttons?.secondaryText || "#ffffff"} onChange={(v: string) => handleChange("ThemeCustomization.buttons.secondaryText", v)} />
         </div>
       </Section>
 
@@ -934,9 +813,9 @@ export default function Features() {
       <Section title="Product Card" icon={Package} preview={<ProductCardPreview cfg={config.ProductCardCustomization} primaryColor={primaryColor} />}>
         <div className="space-y-6">
           <div className="space-y-4">
-            <h3 className="font-semibold">Appearance</h3>
-            <div><Label>Card Background</Label><Input type="color" value={config.ProductCardCustomization?.appearance?.cardBackground || "#ffffff"} onChange={e => handleChange("ProductCardCustomization.appearance.cardBackground", e.target.value)} /></div>
-            <div><Label>Card Border</Label><Input type="color" value={config.ProductCardCustomization?.appearance?.cardBorder || "#e5e7eb"} onChange={e => handleChange("ProductCardCustomization.appearance.cardBorder", e.target.value)} /></div>
+            <p className="font-semibold">Appearance</p>
+            <ColorRow label="Card Background" value={config.ProductCardCustomization?.appearance?.cardBackground || "#ffffff"} onChange={(v: string) => handleChange("ProductCardCustomization.appearance.cardBackground", v)} />
+            <ColorRow label="Card Border" value={config.ProductCardCustomization?.appearance?.cardBorder || "#e5e7eb"} onChange={(v: string) => handleChange("ProductCardCustomization.appearance.cardBorder", v)} />
             <div><Label>Corner Radius: {config.ProductCardCustomization?.appearance?.borderRadius || "16"}px</Label><Input type="range" min="0" max="32" step="2" value={config.ProductCardCustomization?.appearance?.borderRadius || "16"} onChange={e => handleChange("ProductCardCustomization.appearance.borderRadius", e.target.value)} /></div>
             <div><Label>Hover Effect</Label>
               <select className="border rounded p-2 w-full mt-1" value={config.ProductCardCustomization?.appearance?.hoverEffect || "lift"} onChange={e => handleChange("ProductCardCustomization.appearance.hoverEffect", e.target.value)}>
@@ -945,20 +824,20 @@ export default function Features() {
             </div>
           </div>
           <div className="space-y-3 border-t pt-4">
-            <h3 className="font-semibold">Display Options</h3>
+            <p className="font-semibold">Display Options</p>
             <div className="flex items-center justify-between"><Label>Show Product Tags</Label><Checkbox checked={config.ProductCardCustomization?.display?.showTags !== false} onCheckedChange={v => handleChange("ProductCardCustomization.display.showTags", v)} /></div>
             <div className="flex items-center justify-between"><Label>Show Description</Label><Checkbox checked={config.ProductCardCustomization?.display?.showDescription !== false} onCheckedChange={v => handleChange("ProductCardCustomization.display.showDescription", v)} /></div>
             <div className="flex items-center justify-between"><Label>Show Wishlist Button</Label><Checkbox checked={config.ProductCardCustomization?.display?.showWishlist !== false} onCheckedChange={v => handleChange("ProductCardCustomization.display.showWishlist", v)} /></div>
           </div>
           <div className="space-y-3 border-t pt-4">
-            <h3 className="font-semibold">Colors</h3>
-            <div><Label>Title</Label><Input type="color" value={config.ProductCardCustomization?.colors?.titleColor || "#0f172a"} onChange={e => handleChange("ProductCardCustomization.colors.titleColor", e.target.value)} /></div>
-            <div><Label>Description</Label><Input type="color" value={config.ProductCardCustomization?.colors?.descriptionColor || "#475569"} onChange={e => handleChange("ProductCardCustomization.colors.descriptionColor", e.target.value)} /></div>
-            <div><Label>Tag Background</Label><Input type="color" value={config.ProductCardCustomization?.colors?.tagBackground || "#00e676"} onChange={e => handleChange("ProductCardCustomization.colors.tagBackground", e.target.value)} /></div>
-            <div><Label>Tag Text</Label><Input type="color" value={config.ProductCardCustomization?.colors?.tagTextColor || "#ffffff"} onChange={e => handleChange("ProductCardCustomization.colors.tagTextColor", e.target.value)} /></div>
-            <div><Label>Price Color</Label><Input type="color" value={config.ProductCardCustomization?.colors?.priceColor || "#00e676"} onChange={e => handleChange("ProductCardCustomization.colors.priceColor", e.target.value)} /></div>
-            <div><Label>Button Background</Label><Input type="color" value={config.ProductCardCustomization?.colors?.addToCartBg || "#00e676"} onChange={e => handleChange("ProductCardCustomization.colors.addToCartBg", e.target.value)} /></div>
-            <div><Label>Button Text</Label><Input type="color" value={config.ProductCardCustomization?.colors?.addToCartText || "#ffffff"} onChange={e => handleChange("ProductCardCustomization.colors.addToCartText", e.target.value)} /></div>
+            <p className="font-semibold">Colors</p>
+            <ColorRow label="Title" value={config.ProductCardCustomization?.colors?.titleColor || "#0f172a"} onChange={(v: string) => handleChange("ProductCardCustomization.colors.titleColor", v)} />
+            <ColorRow label="Description" value={config.ProductCardCustomization?.colors?.descriptionColor || "#475569"} onChange={(v: string) => handleChange("ProductCardCustomization.colors.descriptionColor", v)} />
+            <ColorRow label="Tag Background" value={config.ProductCardCustomization?.colors?.tagBackground || "#00e676"} onChange={(v: string) => handleChange("ProductCardCustomization.colors.tagBackground", v)} />
+            <ColorRow label="Tag Text" value={config.ProductCardCustomization?.colors?.tagTextColor || "#ffffff"} onChange={(v: string) => handleChange("ProductCardCustomization.colors.tagTextColor", v)} />
+            <ColorRow label="Price Color" value={config.ProductCardCustomization?.colors?.priceColor || "#00e676"} onChange={(v: string) => handleChange("ProductCardCustomization.colors.priceColor", v)} />
+            <ColorRow label="Button Background" value={config.ProductCardCustomization?.colors?.addToCartBg || "#00e676"} onChange={(v: string) => handleChange("ProductCardCustomization.colors.addToCartBg", v)} />
+            <ColorRow label="Button Text" value={config.ProductCardCustomization?.colors?.addToCartText || "#ffffff"} onChange={(v: string) => handleChange("ProductCardCustomization.colors.addToCartText", v)} />
           </div>
         </div>
       </Section>
@@ -973,7 +852,7 @@ export default function Features() {
           <div><Label>Values Section Title</Label><Input value={config.AboutCustomization?.content?.valuesTitle || ""} onChange={e => handleChange("AboutCustomization.content.valuesTitle", e.target.value)} /></div>
           {[1,2,3].map(n => (
             <div key={n} className="bg-white/70 p-4 rounded-lg space-y-2 border border-gray-100">
-              <h4 className="font-medium text-sm">Value {n}</h4>
+              <p className="font-medium text-sm">Value {n}</p>
               <Input placeholder="Title" value={(config.AboutCustomization?.content as any)?.[`value${n}Title`] || ""} onChange={e => handleChange(`AboutCustomization.content.value${n}Title`, e.target.value)} />
               <Textarea rows={2} placeholder="Description" value={(config.AboutCustomization?.content as any)?.[`value${n}Desc`] || ""} onChange={e => handleChange(`AboutCustomization.content.value${n}Desc`, e.target.value)} />
             </div>
