@@ -137,28 +137,49 @@ export default function Login() {
 
   const getUserRecordFromCollection = async (user: Record<string, any>) => {
     try {
-      const q = query(collection(db, "Users"), where("IsAdmin", "==", true));
-      const querySnapshot = await getDocs(q);
-      if (querySnapshot.empty) {
+      const emailToMatch = user.email || user.providerData?.[0]?.email;
+      if (!emailToMatch) {
+        throw new Error('Unable to resolve user email.');
+      }
+
+      let snapshot = await getDocs(query(collection(db, "Users"), where("Email", "==", emailToMatch)));
+      if (snapshot.empty) {
+        snapshot = await getDocs(query(collection(db, "Users"), where("UserID", "==", emailToMatch)));
+      }
+
+      if (snapshot.empty) {
         setAuthLoading(false);
         toast({ title: "Access denied", description: "User does not have admin privileges.", variant: "destructive" });
         return;
       }
-      let isAdmin = false;
-      querySnapshot.forEach((doc) => { if (user.email === doc.data().UserID) isAdmin = true; });
-      if (!isAdmin) {
+
+      const userDoc = snapshot.docs[0];
+      const userData = userDoc.data() as Record<string, any>;
+      const role = userData.Role || (userData.IsAdmin ? 'Admin' : userData.IsAffiliate ? 'Editor' : 'Viewer');
+
+      if (role !== 'Admin' && role !== 'SuperAdmin') {
         setAuthLoading(false);
         toast({ title: "Access denied", description: "You do not have admin privileges.", variant: "destructive" });
         return;
       }
+
+      const authUser = {
+        uid: user.uid,
+        email: emailToMatch,
+        role,
+        tenantId: userData.TenantId || null,
+        userId: userDoc.id,
+      };
+
       localStorage.setItem("IsAuthenticated", "true");
-      localStorage.setItem("AuthenticatedUser", JSON.stringify(user.providerData[0]));
-      setGlobalState({ ...globalState, AuthenticatedUser: user });
+      localStorage.setItem("AuthenticatedUser", JSON.stringify(authUser));
+      setGlobalState({ ...globalState, AuthenticatedUser: authUser });
       navigate("/");
       toast({ title: "Login successful", description: "Welcome to the PlantFresh Admin Panel!" });
       setAuthLoading(false);
-    } catch (error) {
-      toast({ title: "Error", description: "Unable to verify admin credentials.", variant: "destructive" });
+    } catch (error: any) {
+      console.error(error);
+      toast({ title: "Error", description: error?.message || "Unable to verify admin credentials.", variant: "destructive" });
       setAuthLoading(false);
     }
   };
