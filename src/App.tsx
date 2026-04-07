@@ -16,6 +16,9 @@ import NotFound from "./pages/NotFound";
 import Affiliation from "./pages/Affiliation";
 import AppContextProvider from "./context/AppProvider";
 import AuthManager from './pages/AuthManager';
+import Tenants from "./pages/Tenants";
+import Templates from "./pages/Templates";
+import Builder from "./pages/Builder";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +33,9 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
             <Route path="/" element={<Dashboard />} />
+            <Route path="/tenants" element={<Tenants />} />
+            <Route path="/templates" element={<Templates />} />
+            <Route path="/builder/:tenantId" element={<Builder />} />
             <Route path="/users" element={<Users />} />
             <Route path="/banner" element={<HeroBanner />} />
             <Route path="/products" element={<Products />} />

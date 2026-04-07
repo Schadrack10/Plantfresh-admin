@@ -1,5 +1,5 @@
 import { useEffect, useState, useContext } from "react";
-import { LayoutDashboard, User2Icon, KeyRound, Image, Package, Star, MessageSquare, FileText, LogOut, Handshake, Leaf } from "lucide-react";
+import { LayoutDashboard, User2Icon, KeyRound, Image, Package, Star, MessageSquare, FileText, LogOut, Handshake, Leaf, Layers } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { onSnapshot, doc } from "firebase/firestore";
@@ -19,6 +19,8 @@ import AppContext from "../context/AppContext";
 
 const menuItems = [
   { title: "Dashboard",       url: "/",             icon: LayoutDashboard },
+  { title: "Tenants",         url: "/tenants",       icon: Layers },
+  { title: "Templates",       url: "/templates",     icon: Image },
   { title: "Users",           url: "/users",         icon: User2Icon },
   { title: "Auth Management", url: "/auth-manager",  icon: KeyRound },
   { title: "Banner Management", url: "/banner",      icon: Image },
