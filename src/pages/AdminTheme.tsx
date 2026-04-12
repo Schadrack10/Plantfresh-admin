@@ -186,16 +186,6 @@ export default function AdminTheme() {
                 value={theme.secondaryColor}
                 onChange={(v: string) => setTheme({ ...theme, secondaryColor: v })}
               />
-
-              <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700">
-                <span className="font-semibold">📍 Stored at:</span>{" "}
-                <span className="font-mono">StoreConfigs/StoreConfig001/AdminTheme</span>
-                <br />
-                <span className="text-blue-500 mt-1 block">
-                  Tenant site themes are stored separately in{" "}
-                  <span className="font-mono">Sites/{"{"}{"}tenantId{"}</span> and never affect this panel.
-                </span>
-              </div>
             </CardContent>
           </Card>
 
@@ -267,20 +257,6 @@ export default function AdminTheme() {
                   <p className="text-[10px] text-white/50">SuperAdmin</p>
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* Header preview */}
-          <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
-            <div className="relative h-12 bg-white flex items-center justify-between px-4">
-              <div className="w-6 h-4 bg-slate-200 rounded" />
-              <div
-                className="absolute left-0 bottom-0 h-0.5 w-full"
-                style={{ background: `linear-gradient(to right, ${previewPrimary}, ${previewSecondary})` }}
-              />
-              <span className="text-sm font-semibold" style={{ color: previewPrimary }}>
-                {theme.platformName || "Sitecore Admin"}
-              </span>
             </div>
           </div>
         </div>

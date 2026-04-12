@@ -14,10 +14,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import AppContext from "../context/AppContext";
 import { createTenantAdminAccount } from "../context/AppContextProvider";
-import { collection, addDoc, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { collection, addDoc, doc, deleteDoc, updateDoc, getDoc } from "firebase/firestore";
 import {
   AlertCircle, ExternalLink, Settings, Eye, EyeOff, UserPlus,
-  Pencil, Trash2, Globe, GlobeLock, Check, X, Loader2,
+  Pencil, Trash2, Globe, GlobeLock, Check, X, Loader2, Building2,
 } from "lucide-react";
 
 export default function Tenants() {
@@ -35,18 +35,18 @@ export default function Tenants() {
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [creating, setCreating]                     = useState(false);
 
-  // Edit state — which tenant is being edited inline
-  const [editingId, setEditingId]           = useState<string | null>(null);
-  const [editName, setEditName]             = useState("");
-  const [editSubdomain, setEditSubdomain]   = useState("");
-  const [savingEdit, setSavingEdit]         = useState(false);
+  // Edit state
+  const [editingId, setEditingId]         = useState<string | null>(null);
+  const [editName, setEditName]           = useState("");
+  const [editSubdomain, setEditSubdomain] = useState("");
+  const [savingEdit, setSavingEdit]       = useState(false);
 
   // Delete confirmation
-  const [deletingId, setDeletingId]         = useState<string | null>(null);
-  const [deleteLoading, setDeleteLoading]   = useState(false);
+  const [deletingId, setDeletingId]     = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Publish toggle loading
-  const [togglingId, setTogglingId]         = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   // Credentials modal
   const [showCredModal, setShowCredModal]     = useState(false);
@@ -152,19 +152,32 @@ export default function Tenants() {
     }
     setSavingEdit(true);
     try {
-      // Update Tenants collection
+      const trimmedName      = editName.trim();
+      const trimmedSubdomain = editSubdomain.toLowerCase().trim();
+      const now              = new Date();
+
+      // 1. Update Tenants collection
       await updateDoc(doc(db, "Tenants", tenantId), {
-        Name:      editName.trim(),
-        Subdomain: editSubdomain.toLowerCase().trim(),
-        UpdatedAt: new Date(),
+        Name:      trimmedName,
+        Subdomain: trimmedSubdomain,
+        UpdatedAt: now,
       });
-      // Also update Sites doc TenantId stays the same, just update name if stored
+
+      // 2. Update Sites collection — try both Name and TenantName fields
       try {
-        await updateDoc(doc(db, "Sites", tenantId), {
-          TenantName: editName.trim(),
-          UpdatedAt:  new Date(),
-        });
-      } catch {} // Sites doc may not exist yet
+        const siteRef  = doc(db, "Sites", tenantId);
+        const siteSnap = await getDoc(siteRef);
+        if (siteSnap.exists()) {
+          await updateDoc(siteRef, {
+            Name:       trimmedName,
+            TenantName: trimmedName,
+            Subdomain:  trimmedSubdomain,
+            UpdatedAt:  now,
+          });
+        }
+      } catch (siteErr) {
+        console.warn("Site update skipped:", siteErr);
+      }
 
       toast({ title: "✅ Tenant updated" });
       setEditingId(null);
@@ -180,9 +193,7 @@ export default function Tenants() {
   const handleDelete = async (tenantId: string) => {
     setDeleteLoading(true);
     try {
-      // Delete Tenants doc
       await deleteDoc(doc(db, "Tenants", tenantId));
-      // Delete Sites doc
       try { await deleteDoc(doc(db, "Sites", tenantId)); } catch {}
 
       toast({ title: "✅ Tenant deleted" });
@@ -201,7 +212,6 @@ export default function Tenants() {
     try {
       const next = !tenant.Published;
       await siteService.publishSite(tenant.Id, next);
-      // Optimistic update
       setTenants((prev) =>
         prev.map((t) => (t.Id === tenant.Id ? { ...t, Published: next } as any : t))
       );
@@ -244,7 +254,7 @@ export default function Tenants() {
       await refreshTenants();
       toast({
         title:       "✅ Admin account created",
-        description: `Account created for ${adminEmail.trim()}. Verification email sent.`,
+        description: `Account created for ${adminEmail.trim()}.`,
       });
       setShowCredModal(false);
       setAdminEmail(""); setAdminPassword(""); setAdminName("");
@@ -264,13 +274,13 @@ export default function Tenants() {
   const handleSkipCredentials = async () => {
     if (pendingTenantId) {
       await addDoc(collection(db, "Users"), {
-        Email:           adminEmail.trim() || `admin@tenant.com`,
-        Name:            adminName.trim()  || "Tenant Admin",
-        TenantId:        pendingTenantId,
-        Role:            "Admin",
-        IsAdmin:         true,
-        IsSuperAdmin:    false,
-        CreatedAt:       new Date(),
+        Email:            adminEmail.trim() || `admin@tenant.com`,
+        Name:             adminName.trim()  || "Tenant Admin",
+        TenantId:         pendingTenantId,
+        Role:             "Admin",
+        IsAdmin:          true,
+        IsSuperAdmin:     false,
+        CreatedAt:        new Date(),
         PendingAuthSetup: true,
       });
     }
@@ -281,16 +291,21 @@ export default function Tenants() {
     setPendingTenantId(null);
   };
 
+  const getTemplateName = (templateId: string) =>
+    templates.find(t => t.Id === templateId)?.Name || templateId || "—";
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl sm:text-3xl font-bold">Tenant Management</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Create and manage tenant storefronts.
+          {isSuperAdmin
+            ? "Create and manage all tenant storefronts."
+            : "View your assigned tenant storefront."}
         </p>
       </div>
 
-      {/* Create form */}
+      {/* Create form — SuperAdmin only */}
       {isSuperAdmin && (
         <Card>
           <CardHeader>
@@ -339,8 +354,13 @@ export default function Tenants() {
         </div>
       ) : tenants.length === 0 ? (
         <Card>
-          <CardContent className="py-10 text-center text-slate-400 text-sm">
-            No tenants yet. {isSuperAdmin && "Use the form above to create your first one."}
+          <CardContent className="py-12 text-center">
+            <Building2 className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">
+              {isSuperAdmin
+                ? "No tenants yet. Use the form above to create your first one."
+                : "You don't have any tenants assigned to your account yet."}
+            </p>
           </CardContent>
         </Card>
       ) : (
@@ -349,7 +369,6 @@ export default function Tenants() {
             <Card key={tenant.Id} className="overflow-hidden hover:shadow-md transition-shadow">
               <CardHeader className="pb-3">
                 {editingId === tenant.Id ? (
-                  // ── Inline edit form ────────────────────────────────────
                   <div className="space-y-2">
                     <div>
                       <Label className="text-xs text-slate-500">Name</Label>
@@ -383,7 +402,6 @@ export default function Tenants() {
                       {tenant.Name?.[0]?.toUpperCase() || "?"}
                     </div>
                     <span className="truncate flex-1">{tenant.Name}</span>
-                    {/* Published badge */}
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium flex-shrink-0
                       ${tenant.Published
                         ? "bg-emerald-100 text-emerald-700"
@@ -399,6 +417,11 @@ export default function Tenants() {
                   <div className="text-slate-500">
                     Subdomain: <span className="font-mono font-medium text-slate-700">{tenant.Subdomain}</span>
                   </div>
+                  {tenant.TemplateId && (
+                    <div className="text-slate-500">
+                      Template: <span className="font-medium text-slate-700">{getTemplateName(tenant.TemplateId)}</span>
+                    </div>
+                  )}
                   {tenant.AdminEmail && (
                     <div className="text-slate-500">
                       Admin: <span className="font-medium text-slate-700">{tenant.AdminEmail}</span>
@@ -424,33 +447,36 @@ export default function Tenants() {
                       <ExternalLink className="w-3.5 h-3.5" /> Preview
                     </Button>
 
-                    {/* Publish toggle */}
-                    <Button size="sm" variant="outline"
-                      onClick={() => handleTogglePublish(tenant)}
-                      disabled={togglingId === tenant.Id}
-                      className={`gap-1.5 ${tenant.Published
-                        ? "border-amber-300 text-amber-700 hover:bg-amber-50"
-                        : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"}`}>
-                      {togglingId === tenant.Id
-                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        : tenant.Published
-                        ? <GlobeLock className="w-3.5 h-3.5" />
-                        : <Globe className="w-3.5 h-3.5" />}
-                      {tenant.Published ? "Unpublish" : "Publish"}
-                    </Button>
+                    {isSuperAdmin && (
+                      <Button size="sm" variant="outline"
+                        onClick={() => handleTogglePublish(tenant)}
+                        disabled={togglingId === tenant.Id}
+                        className={`gap-1.5 ${tenant.Published
+                          ? "border-amber-300 text-amber-700 hover:bg-amber-50"
+                          : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"}`}>
+                        {togglingId === tenant.Id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : tenant.Published
+                          ? <GlobeLock className="w-3.5 h-3.5" />
+                          : <Globe className="w-3.5 h-3.5" />}
+                        {tenant.Published ? "Unpublish" : "Publish"}
+                      </Button>
+                    )}
 
-                    {/* Edit */}
-                    <Button size="sm" variant="outline"
-                      onClick={() => startEdit(tenant)} className="gap-1.5">
-                      <Pencil className="w-3.5 h-3.5" /> Edit
-                    </Button>
+                    {isSuperAdmin && (
+                      <Button size="sm" variant="outline"
+                        onClick={() => startEdit(tenant)} className="gap-1.5">
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </Button>
+                    )}
 
-                    {/* Delete */}
-                    <Button size="sm" variant="outline"
-                      onClick={() => setDeletingId(tenant.Id)}
-                      className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50">
-                      <Trash2 className="w-3.5 h-3.5" /> Delete
-                    </Button>
+                    {isSuperAdmin && (
+                      <Button size="sm" variant="outline"
+                        onClick={() => setDeletingId(tenant.Id)}
+                        className="gap-1.5 border-red-200 text-red-600 hover:bg-red-50">
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               )}

@@ -1,5 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Image, Users, FileText, Globe, TrendingUp, ShoppingCart, Star } from "lucide-react";
+import { Package, Users, FileText, Globe, TrendingUp, ShoppingCart } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
 import AppContext from "../context/AppContext";
 import { collection, getDocs, getDoc, doc, query, where } from "firebase/firestore";
@@ -22,8 +22,9 @@ export default function Dashboard() {
   const isSuperAdmin   = currentUser?.role === "SuperAdmin";
   const effectiveTenantId = activeTenant?.Id || currentUser?.tenantId || null;
 
-  const [stats, setStats]     = useState<StatCard[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [stats, setStats]         = useState<StatCard[]>([]);
+  const [loading, setLoading]     = useState(false);
+  const [templateName, setTemplateName] = useState<string | null>(null);
 
   // Rehydrate session on first mount
   useEffect(() => {
@@ -36,7 +37,25 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Re-fetch whenever the active tenant changes
+  // Resolve template name whenever active tenant changes
+  useEffect(() => {
+    if (!db || !activeTenant?.TemplateId) { setTemplateName(null); return; }
+    const resolve = async () => {
+      try {
+        const snap = await getDoc(doc(db, "Templates", activeTenant.TemplateId));
+        if (snap.exists()) {
+          setTemplateName(snap.data()?.Name || activeTenant.TemplateId);
+        } else {
+          setTemplateName(activeTenant.TemplateId);
+        }
+      } catch {
+        setTemplateName(activeTenant.TemplateId);
+      }
+    };
+    resolve();
+  }, [db, activeTenant?.TemplateId]);
+
+  // Re-fetch stats whenever the active tenant changes
   useEffect(() => {
     if (!db) return;
 
@@ -47,11 +66,9 @@ export default function Dashboard() {
         let userCount     = 0;
         let orderCount    = 0;
         let blogCount     = 0;
-        let heroSections  = 0;
         let tenantCount   = 0;
 
         if (effectiveTenantId) {
-          // ── Scoped to active tenant ──────────────────────────────────
           const [prodSnap, userSnap, orderSnap] = await Promise.all([
             getDocs(query(collection(db, "Products"), where("TenantId", "==", effectiveTenantId))),
             getDocs(query(collection(db, "Users"),    where("TenantId", "==", effectiveTenantId))),
@@ -61,15 +78,6 @@ export default function Dashboard() {
           userCount    = userSnap.size;
           orderCount   = (orderSnap as any).size || 0;
 
-          // Site sections count
-          const siteSnap = await getDoc(doc(db, "Sites", effectiveTenantId));
-          if (siteSnap.exists()) {
-            const pages    = siteSnap.data()?.Pages || [];
-            const sections = pages.flatMap((p: any) => p.Sections || []);
-            heroSections   = sections.filter((s: any) => s.Type === "Hero").length;
-          }
-
-          // Blog posts
           try {
             const blogSnap = await getDocs(
               query(collection(db, "BlogPosts"), where("TenantId", "==", effectiveTenantId))
@@ -78,7 +86,6 @@ export default function Dashboard() {
           } catch {}
 
         } else if (isSuperAdmin) {
-          // ── SuperAdmin, platform-wide ────────────────────────────────
           const [tSnap, pSnap, uSnap] = await Promise.all([
             getDocs(collection(db, "Tenants")),
             getDocs(collection(db, "Products")),
@@ -92,16 +99,16 @@ export default function Dashboard() {
         setStats(
           effectiveTenantId
             ? [
-                { title: "Products",      value: productCount, icon: Package,       color: "text-blue-600",   bg: "bg-blue-50"   },
-                { title: "Users",         value: userCount,    icon: Users,          color: "text-indigo-600", bg: "bg-indigo-50" },
-                { title: "Orders",        value: orderCount,   icon: ShoppingCart,   color: "text-green-600",  bg: "bg-green-50"  },
-                { title: "Blog Posts",    value: blogCount,    icon: FileText,       color: "text-purple-600", bg: "bg-purple-50" },
+                { title: "Products",   value: productCount, icon: Package,     color: "text-blue-600",   bg: "bg-blue-50"   },
+                { title: "Users",      value: userCount,    icon: Users,        color: "text-indigo-600", bg: "bg-indigo-50" },
+                { title: "Orders",     value: orderCount,   icon: ShoppingCart, color: "text-green-600",  bg: "bg-green-50"  },
+                { title: "Blog Posts", value: blogCount,    icon: FileText,     color: "text-purple-600", bg: "bg-purple-50" },
               ]
             : [
-                { title: "Total Tenants", value: tenantCount,  icon: Globe,          color: "text-indigo-600", bg: "bg-indigo-50" },
-                { title: "Products",      value: productCount, icon: Package,        color: "text-blue-600",   bg: "bg-blue-50"   },
-                { title: "Users",         value: userCount,    icon: Users,          color: "text-green-600",  bg: "bg-green-50"  },
-                { title: "Platform",      value: platformName, icon: TrendingUp,     color: "text-purple-600", bg: "bg-purple-50" },
+                { title: "Total Tenants", value: tenantCount,  icon: Globe,        color: "text-indigo-600", bg: "bg-indigo-50" },
+                { title: "Products",      value: productCount, icon: Package,      color: "text-blue-600",   bg: "bg-blue-50"   },
+                { title: "Users",         value: userCount,    icon: Users,        color: "text-green-600",  bg: "bg-green-50"  },
+                { title: "Platform",      value: platformName, icon: TrendingUp,   color: "text-purple-600", bg: "bg-purple-50" },
               ]
         );
       } catch (err) {
@@ -118,7 +125,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
 
-      {/* ── Page header — shows active tenant name ──────────────────────── */}
+      {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">
@@ -133,7 +140,6 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {/* Active tenant badge */}
         {activeTenant && (
           <div className="flex items-center gap-2 self-start sm:self-auto">
             <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
@@ -143,7 +149,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── Stats grid ──────────────────────────────────────────────────── */}
+      {/* Stats grid */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {loading
           ? Array.from({ length: 4 }).map((_, i) => (
@@ -173,7 +179,7 @@ export default function Dashboard() {
             ))}
       </div>
 
-      {/* ── Active tenant info card ──────────────────────────────────────── */}
+      {/* Active tenant details */}
       {activeTenant && (
         <Card>
           <CardHeader className="pb-3">
@@ -190,7 +196,13 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Template</p>
-              <p className="text-slate-700">{(activeTenant as any).TemplateId || "—"}</p>
+              <p className="text-slate-700">
+                {templateName
+                  ? templateName
+                  : activeTenant.TemplateId
+                  ? <span className="text-slate-400 italic">Loading…</span>
+                  : "—"}
+              </p>
             </div>
             <div>
               <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Admin email</p>
@@ -200,7 +212,7 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* ── Logged-in user summary ───────────────────────────────────────── */}
+      {/* Logged-in user summary */}
       <Card className="border border-slate-200">
         <CardContent className="flex items-center gap-4 py-4">
           <div
