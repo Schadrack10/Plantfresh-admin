@@ -2,89 +2,73 @@ import React, { useState, useEffect, useContext, useRef } from 'react';
 import {
   ChevronLeft, LayoutDashboard, Pencil, Eye,
   User, Users, Shield, Type, Image as ImageIcon,
-  Palette, Layout, ToggleRight, Layers, SkipBack,
-  SkipForward, Play, Pause, Upload, Loader2, Trash2, Plus,
-  Sliders,
+  Palette, Layout, ToggleRight, Layers,
+  SkipBack, SkipForward, Play, Pause,
+  Upload, Loader2, Trash2, Plus, Sliders, AlertCircle,
 } from 'lucide-react';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppContext from '../context/AppContext';
 import { useToast } from '@/hooks/use-toast';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const TRANSITIONS = [
-  { value: 'fade', label: 'Fade' },
-  { value: 'slide', label: 'Slide' },
-  { value: 'slideUp', label: 'Slide Up' },
-  { value: 'zoom', label: 'Zoom' },
+  { value: 'fade', label: 'Fade' }, { value: 'slide', label: 'Slide' },
+  { value: 'slideUp', label: 'Slide Up' }, { value: 'zoom', label: 'Zoom' },
 ];
-
 const RADIUS_OPTIONS = [
-  { value: 'rounded-none', label: 'Square' },
-  { value: 'rounded-lg', label: 'Rounded' },
-  { value: 'rounded-xl', label: 'Large' },
-  { value: 'rounded-2xl', label: 'XL' },
+  { value: 'rounded-none', label: 'Square' }, { value: 'rounded-lg', label: 'Rounded' },
+  { value: 'rounded-xl', label: 'Large' }, { value: 'rounded-2xl', label: 'XL' },
   { value: 'rounded-full', label: 'Pill' },
 ];
-
 const SHADOW_OPTIONS = [
-  { value: '', label: 'None' },
-  { value: 'shadow-sm', label: 'Small' },
-  { value: 'shadow-md', label: 'Medium' },
-  { value: 'shadow-lg', label: 'Large' },
-  { value: 'shadow-xl', label: 'XL' },
-  { value: 'shadow-2xl', label: '2XL' },
+  { value: '', label: 'None' }, { value: 'shadow-sm', label: 'Small' },
+  { value: 'shadow-md', label: 'Medium' }, { value: 'shadow-lg', label: 'Large' },
+  { value: 'shadow-xl', label: 'XL' }, { value: 'shadow-2xl', label: '2XL' },
 ];
-
 const FONT_SIZE_OPTIONS = [
-  { value: 'text-lg', label: 'Small' },
-  { value: 'text-xl', label: 'Medium' },
-  { value: 'text-2xl', label: 'Large' },
-  { value: 'text-3xl', label: 'XL' },
+  { value: 'text-lg', label: 'Small' }, { value: 'text-xl', label: 'Medium' },
+  { value: 'text-2xl', label: 'Large' }, { value: 'text-3xl', label: 'XL' },
   { value: 'text-4xl', label: '2XL' },
 ];
-
 const FONT_WEIGHT_OPTIONS = [
-  { value: 'font-normal', label: 'Normal' },
-  { value: 'font-medium', label: 'Medium' },
-  { value: 'font-semibold', label: 'Semibold' },
-  { value: 'font-bold', label: 'Bold' },
+  { value: 'font-normal', label: 'Normal' }, { value: 'font-medium', label: 'Medium' },
+  { value: 'font-semibold', label: 'Semibold' }, { value: 'font-bold', label: 'Bold' },
   { value: 'font-extrabold', label: 'Extra Bold' },
 ];
 
 const DEFAULT_CONFIG = {
   userLogin: {
     layout: 'split', transition: 'fade',
-    images: ['https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=1200', 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1200'],
+    images: ['https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=1200'],
     background: { type: 'image', imageUrl: '', gradient: 'linear-gradient(135deg,#16a34a,#0d9488)' },
-    branding: { logoUrl: '', logoText: 'PlantFresh', showLogo: true },
-    text: { title: 'Welcome Back!', subtitle: 'Sign in to continue your eco journey', registerTitle: 'Join Our Green Family', registerSubtitle: 'Create your account today', titleColor: '#111827', subtitleColor: '#6b7280', titleSize: 'text-3xl', titleWeight: 'font-bold' },
+    branding: { logoUrl: '', logoText: 'Store', showLogo: true },
+    text: { title: 'Welcome Back!', subtitle: 'Sign in to continue', registerTitle: 'Join Us', registerSubtitle: 'Create your account today', titleColor: '#111827', subtitleColor: '#6b7280', titleSize: 'text-3xl', titleWeight: 'font-bold' },
     button: { loginText: 'Sign In', registerText: 'Create Account', color: '#16a34a', colorTo: '', gradient: false, radius: 'rounded-xl', textColor: '#ffffff', shadow: 'shadow-lg' },
     options: { showRegister: true, showGoogle: true, showAffiliateLink: true },
     style: { overlayOpacity: 30, imageBlur: 0, cardBlur: 4, cardBg: '#ffffff', cardBgOpacity: 95, cardBorder: 'transparent', cardRadius: 'rounded-2xl', inputBorderColor: '#e5e7eb', inputRadius: 'rounded-xl', leftPanelGlass: false },
   },
   affiliateLogin: {
     layout: 'split', transition: 'slide',
-    images: ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=1200', 'https://images.unsplash.com/photo-1446941611757-91d2c3bd3d45?w=1200'],
+    images: ['https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=1200'],
     background: { type: 'gradient', imageUrl: '', gradient: 'linear-gradient(135deg,#16a34a,#0d9488,#0284c7)' },
-    branding: { logoUrl: '', logoText: 'PlantFresh Affiliates', showLogo: true },
-    text: { title: 'Earn While You Clean Up The Planet', subtitle: 'Join our affiliate program and start earning today', step2Title: 'Bank Details', step2Subtitle: 'Enter your payment information to receive commissions', titleColor: '#111827', subtitleColor: '#6b7280', titleSize: 'text-3xl', titleWeight: 'font-bold' },
-    button: { loginText: 'Create Affiliate Account', registerText: '', color: '#16a34a', colorTo: '', gradient: false, radius: 'rounded-xl', textColor: '#ffffff', shadow: 'shadow-lg' },
+    branding: { logoUrl: '', logoText: 'Affiliates', showLogo: true },
+    text: { title: 'Earn While You Help', subtitle: 'Join our affiliate program', step2Title: 'Bank Details', step2Subtitle: 'Enter your payment information', titleColor: '#111827', subtitleColor: '#6b7280', titleSize: 'text-3xl', titleWeight: 'font-bold' },
+    button: { loginText: 'Create Account', registerText: '', color: '#16a34a', colorTo: '', gradient: false, radius: 'rounded-xl', textColor: '#ffffff', shadow: 'shadow-lg' },
     options: { showBenefits: true, showBankStep: true },
     style: { overlayOpacity: 30, imageBlur: 0, cardBlur: 0, cardBg: '#ffffff', cardBgOpacity: 100, cardBorder: 'transparent', cardRadius: 'rounded-3xl', inputBorderColor: '#e5e7eb', inputRadius: 'rounded-xl', leftPanelGlass: false },
   },
   adminLogin: {
     layout: 'center', transition: 'zoom',
     images: ['https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200'],
-    background: { type: 'image', imageUrl: '/bg3.avif', gradient: 'linear-gradient(135deg,#1e293b,#0f172a)' },
-    branding: { logoUrl: '', logoText: '🌿 PlantFresh Admin', showLogo: true },
-    text: { title: 'Admin Login', subtitle: 'Enter your credentials to access the admin panel', titleColor: '#111827', subtitleColor: '#6b7280', titleSize: 'text-2xl', titleWeight: 'font-bold' },
+    background: { type: 'image', imageUrl: '', gradient: 'linear-gradient(135deg,#1e293b,#0f172a)' },
+    branding: { logoUrl: '', logoText: 'Admin', showLogo: true },
+    text: { title: 'Admin Login', subtitle: 'Access the admin panel', titleColor: '#111827', subtitleColor: '#6b7280', titleSize: 'text-2xl', titleWeight: 'font-bold' },
     button: { loginText: 'Sign In', registerText: '', color: '#16a34a', colorTo: '', gradient: false, radius: 'rounded-xl', textColor: '#ffffff', shadow: 'shadow-lg' },
     options: { showForgotPassword: false },
     style: { overlayOpacity: 50, imageBlur: 0, cardBlur: 8, cardBg: '#ffffff', cardBgOpacity: 95, cardBorder: 'transparent', cardRadius: 'rounded-2xl', inputBorderColor: '#e5e7eb', inputRadius: 'rounded-xl', leftPanelGlass: false },
@@ -97,7 +81,7 @@ const SCREENS = [
   { key: 'adminLogin', label: 'Admin Login', icon: Shield },
 ];
 
-const OPTION_LABELS = {
+const OPTION_LABELS: Record<string, string> = {
   showRegister: 'Show Register / Sign Up',
   showGoogle: 'Show Google Sign-In',
   showAffiliateLink: '"Become an Affiliate" Link',
@@ -113,38 +97,34 @@ const EDITOR_TABS = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const getBgStyle = (bg) => {
+const getBgStyle = (bg: any) => {
   if (bg?.type === 'image' && bg.imageUrl)
     return { backgroundImage: `url(${bg.imageUrl})`, backgroundSize: 'cover', backgroundPosition: 'center' };
   return { background: bg?.gradient || 'linear-gradient(135deg,#16a34a,#0d9488)' };
 };
 
-const getTransClass = (transition, active) => {
+const getTransClass = (transition: string, active: boolean) => {
   const base = 'absolute inset-0 transition-all duration-700 ease-in-out';
   if (active) {
-    switch (transition) {
-      case 'slide':   return `${base} opacity-100 translate-x-0`;
-      case 'slideUp': return `${base} opacity-100 translate-y-0`;
-      case 'zoom':    return `${base} opacity-100 scale-100`;
-      default:        return `${base} opacity-100`;
-    }
+    if (transition === 'slide') return `${base} opacity-100 translate-x-0`;
+    if (transition === 'slideUp') return `${base} opacity-100 translate-y-0`;
+    if (transition === 'zoom') return `${base} opacity-100 scale-100`;
+    return `${base} opacity-100`;
   }
-  switch (transition) {
-    case 'slide':   return `${base} opacity-0 -translate-x-full`;
-    case 'slideUp': return `${base} opacity-0 translate-y-full`;
-    case 'zoom':    return `${base} opacity-0 scale-110`;
-    default:        return `${base} opacity-0`;
-  }
+  if (transition === 'slide') return `${base} opacity-0 -translate-x-full`;
+  if (transition === 'slideUp') return `${base} opacity-0 translate-y-full`;
+  if (transition === 'zoom') return `${base} opacity-0 scale-110`;
+  return `${base} opacity-0`;
 };
 
-const hexToRgba = (hex, opacity) => {
+const hexToRgba = (hex: string, opacity: number) => {
   const r = parseInt((hex || '#ffffff').slice(1, 3), 16);
   const g = parseInt((hex || '#ffffff').slice(3, 5), 16);
   const b = parseInt((hex || '#ffffff').slice(5, 7), 16);
   return `rgba(${r},${g},${b},${(opacity ?? 100) / 100})`;
 };
 
-const buildBtnStyle = (button) => ({
+const buildBtnStyle = (button: any) => ({
   background: button?.gradient && button?.colorTo
     ? `linear-gradient(135deg, ${button.color}, ${button.colorTo})`
     : button?.color || '#16a34a',
@@ -152,17 +132,16 @@ const buildBtnStyle = (button) => ({
   border: 'none',
 });
 
-const buildCardStyle = (style) => ({
+const buildCardStyle = (style: any) => ({
   backgroundColor: hexToRgba(style?.cardBg || '#ffffff', style?.cardBgOpacity ?? 100),
   borderColor: style?.cardBorder !== 'transparent' ? style?.cardBorder : 'transparent',
   borderWidth: style?.cardBorder && style.cardBorder !== 'transparent' ? '1px' : '0',
-  borderStyle: 'solid',
+  borderStyle: 'solid' as const,
   backdropFilter: style?.cardBlur ? `blur(${style.cardBlur}px)` : undefined,
-  WebkitBackdropFilter: style?.cardBlur ? `blur(${style.cardBlur}px)` : undefined,
 });
 
-// ─── Shared sub-components ────────────────────────────────────────────────────
-const Toggle = ({ checked, onChange, label }) => (
+// ─── Sub-components ───────────────────────────────────────────────────────────
+const Toggle = ({ checked, onChange, label }: any) => (
   <div className="flex items-center justify-between py-2.5">
     <span className="text-sm text-gray-600">{label}</span>
     <button onClick={() => onChange(!checked)}
@@ -172,7 +151,7 @@ const Toggle = ({ checked, onChange, label }) => (
   </div>
 );
 
-const ColorRow = ({ label, value, onChange }) => (
+const ColorRow = ({ label, value, onChange }: any) => (
   <div className="space-y-1.5">
     <Label className="text-xs text-slate-500">{label}</Label>
     <div className="flex gap-2">
@@ -183,49 +162,61 @@ const ColorRow = ({ label, value, onChange }) => (
   </div>
 );
 
-const SliderRow = ({ label, value, min, max, step = 1, onChange, unit = '' }) => (
+const SliderRow = ({ label, value, min, max, onChange, unit = '' }: any) => (
   <div className="space-y-1.5">
     <div className="flex items-center justify-between">
       <Label className="text-xs text-slate-500">{label}</Label>
       <span className="text-xs font-mono text-slate-600">{value}{unit}</span>
     </div>
-    <input type="range" min={min} max={max} step={step} value={value}
-      onChange={e => onChange(Number(e.target.value))}
+    <input type="range" min={min} max={max} value={value} onChange={e => onChange(Number(e.target.value))}
       className="w-full h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-emerald-500" />
   </div>
 );
 
-// ─── Image Slot ───────────────────────────────────────────────────────────────
-const ImageSlot = ({ index, url, onUrlChange, onRemove, storage, screenKey }) => {
+// ─── Image Slot — uploads to Firebase Storage + Assets collection ─────────────
+const ImageSlot = ({ index, url, onUrlChange, onRemove, storage, db, tenantId, screenKey }: any) => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const fileRef = useRef(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const handleFileChange = async (e) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    if (!storage) {
-      const reader = new FileReader();
-      reader.onload = (ev) => onUrlChange(ev.target.result);
-      reader.readAsDataURL(file);
-      toast({ title: '⚠️ Firebase Storage not connected', variant: 'destructive' });
+    if (!file || !storage || !tenantId) {
+      toast({ title: 'Storage not available', variant: 'destructive' });
       return;
     }
     try {
       setUploading(true);
-      const storageRef = ref(storage, `auth-backgrounds/${screenKey}_${index}_${Date.now()}_${file.name}`);
+      const fileName = `${Date.now()}_${file.name}`;
+      const storagePath = `assets/${tenantId}/auth/${screenKey}_${index}_${fileName}`;
+      const storageRef = ref(storage, storagePath);
       const task = uploadBytesResumable(storageRef, file);
-      await new Promise((resolve, reject) => {
+
+      await new Promise<void>((resolve, reject) => {
         task.on('state_changed',
-          (snap) => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+          snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
           reject,
-          async () => { onUrlChange(await getDownloadURL(task.snapshot.ref)); resolve(undefined); }
+          async () => {
+            const downloadURL = await getDownloadURL(task.snapshot.ref);
+            // Save to Assets collection
+            await addDoc(collection(db, 'Assets'), {
+              TenantId: tenantId,
+              URL: downloadURL,
+              Type: 'auth-background',
+              FileName: fileName,
+              StoragePath: storagePath,
+              Screen: screenKey,
+              CreatedAt: serverTimestamp(),
+            });
+            onUrlChange(downloadURL);
+            resolve();
+          }
         );
       });
-      toast({ title: '✅ Image uploaded' });
-    } catch (err) {
-      toast({ title: '❌ Upload failed', description: err.message, variant: 'destructive' });
+      toast({ title: 'Image uploaded' });
+    } catch (err: any) {
+      toast({ title: 'Upload failed', description: err.message, variant: 'destructive' });
     } finally {
       setUploading(false); setProgress(0);
       if (fileRef.current) fileRef.current.value = '';
@@ -240,11 +231,11 @@ const ImageSlot = ({ index, url, onUrlChange, onRemove, storage, screenKey }) =>
       </div>
       <Input value={url || ''} onChange={e => onUrlChange(e.target.value)} placeholder="Paste URL or upload" className="bg-gray-50 text-xs h-8" />
       <label className="block cursor-pointer">
-        <div className={`border-2 border-dashed rounded-lg p-3 text-center transition-colors ${uploading ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50'}`}>
+        <div className={`border-2 border-dashed rounded-lg p-3 text-center transition-colors
+          ${uploading ? 'border-emerald-300 bg-emerald-50' : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50'}`}>
           {uploading
-            ? <div className="flex items-center justify-center gap-2 text-emerald-600 text-xs"><Loader2 className="w-4 h-4 animate-spin" />Uploading... {progress}%</div>
-            : <div className="flex items-center justify-center gap-2 text-slate-500 text-xs"><Upload className="w-4 h-4" />Click to upload</div>
-          }
+            ? <div className="flex items-center justify-center gap-2 text-emerald-600 text-xs"><Loader2 className="w-4 h-4 animate-spin" />Uploading… {progress}%</div>
+            : <div className="flex items-center justify-center gap-2 text-slate-500 text-xs"><Upload className="w-4 h-4" />Click to upload</div>}
         </div>
         <input ref={fileRef} type="file" accept="image/*" className="hidden" disabled={uploading} onChange={handleFileChange} />
       </label>
@@ -257,13 +248,14 @@ const ImageSlot = ({ index, url, onUrlChange, onRemove, storage, screenKey }) =>
   );
 };
 
-const ImageListEditor = ({ images, onChange, storage, screenKey }) => {
-  const updateImage = (i, val) => { const u = [...images]; u[i] = val; onChange(u); };
+const ImageListEditor = ({ images, onChange, storage, db, tenantId, screenKey }: any) => {
+  const updateImage = (i: number, val: string) => { const u = [...images]; u[i] = val; onChange(u); };
   return (
     <div className="space-y-3">
-      {images.map((url, i) => (
-        <ImageSlot key={i} index={i} url={url} onUrlChange={val => updateImage(i, val)}
-          onRemove={() => onChange(images.filter((_, idx) => idx !== i))} storage={storage} screenKey={screenKey} />
+      {images.map((url: string, i: number) => (
+        <ImageSlot key={i} index={i} url={url} onUrlChange={(val: string) => updateImage(i, val)}
+          onRemove={() => onChange(images.filter((_: any, idx: number) => idx !== i))}
+          storage={storage} db={db} tenantId={tenantId} screenKey={screenKey} />
       ))}
       <Button size="sm" variant="outline" onClick={() => onChange([...images, ''])} className="w-full h-9 border-dashed gap-1.5">
         <Plus className="w-4 h-4" /> Add Image
@@ -273,23 +265,17 @@ const ImageListEditor = ({ images, onChange, storage, screenKey }) => {
 };
 
 // ─── Animated Image Panel ─────────────────────────────────────────────────────
-const ImagePanel = ({ images, transition, bgStyle, children, className, overlayOpacity = 30, imageBlur = 0 }) => {
+const ImagePanel = ({ images, transition, bgStyle, children, className, overlayOpacity = 30 }: any) => {
   const [idx, setIdx] = useState(0);
-  const [prevIdx, setPrevIdx] = useState(null);
+  const [prevIdx, setPrevIdx] = useState<number | null>(null);
   useEffect(() => {
     const imgs = (images || []).filter(Boolean);
     if (imgs.length <= 1) return;
-    const t = setInterval(() => {
-      setPrevIdx(idx);
-      setIdx(p => (p + 1) % imgs.length);
-      setTimeout(() => setPrevIdx(null), 700);
-    }, 4000);
+    const t = setInterval(() => { setPrevIdx(idx); setIdx(p => (p + 1) % imgs.length); setTimeout(() => setPrevIdx(null), 700); }, 4000);
     return () => clearInterval(t);
   }, [images, idx]);
   const imgs = (images || []).filter(Boolean);
-  const bgFor = (url) => url
-    ? { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center', filter: imageBlur > 0 ? `blur(${imageBlur}px)` : undefined }
-    : bgStyle;
+  const bgFor = (url: string) => url ? { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' } : bgStyle;
   return (
     <div className={`relative overflow-hidden ${className || ''}`}>
       {prevIdx !== null && <div className={getTransClass(transition, false)} style={bgFor(imgs[prevIdx])} />}
@@ -301,25 +287,19 @@ const ImagePanel = ({ images, transition, bgStyle, children, className, overlayO
 };
 
 // ─── Mini Form Preview ────────────────────────────────────────────────────────
-const MiniForm = ({ cfg, isOverview = false }) => {
+const MiniForm = ({ cfg, isOverview = false }: any) => {
   const btnStyle = buildBtnStyle(cfg.button);
-  const btnText = cfg.button?.loginText || 'Sign In';
-  const showGoogle = cfg.options?.showGoogle;
   const scale = isOverview ? 'text-[10px]' : 'text-xs';
   const inputH = isOverview ? 'h-5' : 'h-7';
   const gap = isOverview ? 'space-y-1.5' : 'space-y-2';
-  const cardStyle = buildCardStyle(cfg.style);
-  const inputStyle = { borderColor: cfg.style?.inputBorderColor || '#e5e7eb', borderRadius: undefined };
-
   return (
     <div className={gap}>
-      {showGoogle && (
+      {cfg.options?.showGoogle && (
         <div className={`${inputH} border border-gray-200 rounded flex items-center justify-center gap-1 bg-white`}>
           <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" className={isOverview ? 'w-2.5 h-2.5' : 'w-3.5 h-3.5'} />
           <span className={`${scale} text-gray-600 font-medium`}>Continue with Google</span>
         </div>
       )}
-      {showGoogle && <div className="flex items-center gap-1"><div className="flex-1 h-px bg-gray-200" /><span className={`${scale} text-gray-400`}>or</span><div className="flex-1 h-px bg-gray-200" /></div>}
       <div>
         <p className={`${scale} text-gray-500 mb-0.5`}>Email</p>
         <div className={`${inputH} border rounded bg-gray-50 px-2 flex items-center`} style={{ borderColor: cfg.style?.inputBorderColor || '#e5e7eb' }}>
@@ -333,15 +313,15 @@ const MiniForm = ({ cfg, isOverview = false }) => {
         </div>
       </div>
       <div className={`${inputH} ${cfg.button?.radius || 'rounded-xl'} ${cfg.button?.shadow || ''} flex items-center justify-center font-semibold ${scale}`} style={btnStyle}>
-        {btnText}
+        {cfg.button?.loginText || 'Sign In'}
       </div>
     </div>
   );
 };
 
 // ─── Overview Card ────────────────────────────────────────────────────────────
-const OverviewCard = ({ screen, config, onEdit }) => {
-  const cfg = config || DEFAULT_CONFIG[screen.key];
+const OverviewCard = ({ screen, config, onEdit }: any) => {
+  const cfg = config || DEFAULT_CONFIG[screen.key as keyof typeof DEFAULT_CONFIG];
   const bgStyle = getBgStyle(cfg.background);
   const isCenter = cfg.layout === 'center';
   const images = (cfg.images || []).filter(Boolean);
@@ -353,19 +333,18 @@ const OverviewCard = ({ screen, config, onEdit }) => {
       <div className="relative w-full h-56">
         {isCenter ? (
           <ImagePanel images={images} transition={cfg.transition || 'fade'} bgStyle={bgStyle} className="w-full h-full"
-            overlayOpacity={cfg.style?.overlayOpacity ?? 30} imageBlur={cfg.style?.imageBlur ?? 0}>
+            overlayOpacity={cfg.style?.overlayOpacity ?? 30}>
             <div className="w-full h-full flex items-center justify-center p-4">
               <div className={`${cfg.style?.cardRadius || 'rounded-xl'} shadow-xl p-4 w-56`} style={cardStyle}>
                 {cfg.branding.showLogo && (
                   <div className="flex items-center gap-1.5 mb-2">
                     <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: cfg.button.color }}>
-                      <span className="text-white text-[9px] font-bold">P</span>
+                      <span className="text-white text-[9px] font-bold">S</span>
                     </div>
                     <span className="font-bold text-[11px] text-gray-800 truncate">{cfg.branding.logoText}</span>
                   </div>
                 )}
-                <p className={`font-bold text-xs truncate mb-0.5`} style={{ color: cfg.text?.titleColor || '#111827' }}>{cfg.text.title}</p>
-                <p className="text-[10px] mb-2 truncate" style={{ color: cfg.text?.subtitleColor || '#6b7280' }}>{cfg.text.subtitle}</p>
+                <p className="font-bold text-xs truncate mb-0.5" style={{ color: cfg.text?.titleColor || '#111827' }}>{cfg.text.title}</p>
                 <MiniForm cfg={cfg} isOverview={true} />
               </div>
             </div>
@@ -373,9 +352,9 @@ const OverviewCard = ({ screen, config, onEdit }) => {
         ) : (
           <div className="w-full h-full flex">
             <ImagePanel images={images} transition={cfg.transition || 'fade'} bgStyle={bgStyle} className="w-1/2 h-full"
-              overlayOpacity={cfg.style?.overlayOpacity ?? 30} imageBlur={cfg.style?.imageBlur ?? 0}>
+              overlayOpacity={cfg.style?.overlayOpacity ?? 30}>
               <div className="w-full h-full flex items-center justify-center px-4">
-                <div className={`text-center text-white ${cfg.style?.leftPanelGlass ? 'bg-white/10 backdrop-blur-sm rounded-xl p-3' : ''}`}>
+                <div className="text-center text-white">
                   {cfg.branding.showLogo && (
                     <div className="flex items-center justify-center gap-1.5 mb-2">
                       <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
@@ -384,15 +363,13 @@ const OverviewCard = ({ screen, config, onEdit }) => {
                       <span className="font-bold text-xs">{cfg.branding.logoText}</span>
                     </div>
                   )}
-                  <p className="text-xs font-semibold leading-tight line-clamp-3">{cfg.text.title}</p>
-                  <p className="text-[10px] opacity-75 mt-1 line-clamp-2">{cfg.text.subtitle}</p>
+                  <p className="text-xs font-semibold leading-tight">{cfg.text.title}</p>
                 </div>
               </div>
             </ImagePanel>
             <div className="w-1/2 flex items-center justify-center p-4" style={cardStyle}>
               <div className="w-full">
-                <p className={`font-bold text-xs truncate mb-0.5`} style={{ color: cfg.text?.titleColor || '#111827' }}>{cfg.text.title}</p>
-                <p className="text-[10px] mb-2 truncate" style={{ color: cfg.text?.subtitleColor || '#6b7280' }}>{cfg.text.subtitle}</p>
+                <p className="font-bold text-xs truncate mb-2" style={{ color: cfg.text?.titleColor || '#111827' }}>{cfg.text.title}</p>
                 <MiniForm cfg={cfg} isOverview={true} />
               </div>
             </div>
@@ -413,22 +390,17 @@ const OverviewCard = ({ screen, config, onEdit }) => {
 };
 
 // ─── Full Preview ─────────────────────────────────────────────────────────────
-const FullPreview = ({ config }) => {
+const FullPreview = ({ config }: any) => {
   const [imgIdx, setImgIdx] = useState(0);
-  const [prevIdx, setPrevIdx] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
-  const autoRef = useRef(null);
-
+  const autoRef = useRef<any>(null);
   const images = (config.images || []).filter(Boolean);
   const bgStyle = getBgStyle(config.background);
   const isCenter = config.layout === 'center';
-  const transition = config.transition || 'fade';
   const cardStyle = buildCardStyle(config.style);
   const btnStyle = buildBtnStyle(config.button);
-  const overlayOpacity = config.style?.overlayOpacity ?? 30;
-  const imageBlur = config.style?.imageBlur ?? 0;
 
-  const goTo = (next) => { setPrevIdx(imgIdx); setImgIdx(next); setTimeout(() => setPrevIdx(null), 700); };
+  const goTo = (next: number) => setImgIdx(next);
 
   useEffect(() => {
     clearInterval(autoRef.current);
@@ -437,21 +409,20 @@ const FullPreview = ({ config }) => {
     return () => clearInterval(autoRef.current);
   }, [isPlaying, imgIdx, images.length]);
 
-  const bgFor = (url) => url
-    ? { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center', filter: imageBlur > 0 ? `blur(${imageBlur}px)` : undefined }
+  const bgFor = (url: string) => url
+    ? { backgroundImage: `url(${url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
     : bgStyle;
 
   const BgLayers = () => (
     <>
-      {prevIdx !== null && <div className={getTransClass(transition, false)} style={bgFor(images[prevIdx] || '')} />}
-      <div className={getTransClass(transition, true)} style={bgFor(images[imgIdx] || '')} />
-      <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${overlayOpacity / 100})` }} />
+      <div className={getTransClass(config.transition || 'fade', true)} style={bgFor(images[imgIdx] || '')} />
+      <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${(config.style?.overlayOpacity ?? 30) / 100})` }} />
     </>
   );
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
           <Eye className="w-4 h-4" /> Live Preview
         </div>
@@ -463,23 +434,22 @@ const FullPreview = ({ config }) => {
           </div>
         )}
       </div>
-
-      <div className="relative w-full h-[420px] rounded-lg overflow-hidden shadow-lg border-2 border-slate-200 bg-slate-800">
+      <div className="relative w-full h-[380px] rounded-lg overflow-hidden shadow-lg border-2 border-slate-200 bg-slate-800">
         {isCenter ? (
           <>
             <BgLayers />
             <div className="absolute inset-0 flex items-center justify-center z-10 p-4">
-              <div className={`${config.style?.cardRadius || 'rounded-2xl'} shadow-2xl p-7 w-full max-w-sm`} style={cardStyle}>
+              <div className={`${config.style?.cardRadius || 'rounded-2xl'} shadow-2xl p-6 w-full max-w-sm`} style={cardStyle}>
                 {config.branding.showLogo && (
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: config.button.color }}>
-                      <span style={{ color: config.button.textColor || '#fff' }} className="font-bold text-sm">P</span>
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: config.button.color }}>
+                      <span style={{ color: config.button.textColor || '#fff' }} className="font-bold text-xs">S</span>
                     </div>
                     <span className="font-bold text-gray-800">{config.branding.logoText}</span>
                   </div>
                 )}
-                <h2 className={`${config.text?.titleSize || 'text-lg'} ${config.text?.titleWeight || 'font-bold'} mb-0.5`} style={{ color: config.text?.titleColor || '#111827' }}>{config.text.title}</h2>
-                <p className="text-xs mb-4" style={{ color: config.text?.subtitleColor || '#6b7280' }}>{config.text.subtitle}</p>
+                <h2 className={`${config.text?.titleSize || 'text-xl'} ${config.text?.titleWeight || 'font-bold'} mb-0.5`} style={{ color: config.text?.titleColor || '#111827' }}>{config.text.title}</h2>
+                <p className="text-xs mb-3" style={{ color: config.text?.subtitleColor || '#6b7280' }}>{config.text.subtitle}</p>
                 <MiniForm cfg={config} isOverview={false} />
               </div>
             </div>
@@ -489,26 +459,24 @@ const FullPreview = ({ config }) => {
             <div className="w-1/2 h-full relative overflow-hidden">
               <BgLayers />
               <div className="absolute inset-0 flex items-center justify-center z-10 p-8">
-                <div className={config.style?.leftPanelGlass ? 'bg-white/10 backdrop-blur-md rounded-2xl p-6' : ''}>
-                  <div className="text-white">
-                    {config.branding.showLogo && (
-                      <div className="flex items-center gap-2 mb-5">
-                        <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center">
-                          <span className="font-bold text-sm">P</span>
-                        </div>
-                        <span className="font-bold">{config.branding.logoText}</span>
+                <div className="text-white">
+                  {config.branding.showLogo && (
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                        <span className="font-bold text-sm">S</span>
                       </div>
-                    )}
-                    <h1 className="text-xl font-bold mb-2 leading-tight">{config.text.title}</h1>
-                    <p className="text-sm opacity-80">{config.text.subtitle}</p>
-                  </div>
+                      <span className="font-bold">{config.branding.logoText}</span>
+                    </div>
+                  )}
+                  <h1 className="text-lg font-bold mb-2 leading-tight">{config.text.title}</h1>
+                  <p className="text-sm opacity-80">{config.text.subtitle}</p>
                 </div>
               </div>
             </div>
-            <div className="w-1/2 flex items-center justify-center p-8" style={cardStyle}>
+            <div className="w-1/2 flex items-center justify-center p-6" style={cardStyle}>
               <div className="w-full">
                 <h2 className={`${config.text?.titleSize || 'text-lg'} ${config.text?.titleWeight || 'font-bold'} mb-0.5`} style={{ color: config.text?.titleColor || '#111827' }}>{config.text.title}</h2>
-                <p className="text-xs mb-4" style={{ color: config.text?.subtitleColor || '#6b7280' }}>{config.text.subtitle}</p>
+                <p className="text-xs mb-3" style={{ color: config.text?.subtitleColor || '#6b7280' }}>{config.text.subtitle}</p>
                 <MiniForm cfg={config} isOverview={false} />
               </div>
             </div>
@@ -521,8 +489,11 @@ const FullPreview = ({ config }) => {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function AuthManager() {
-  const { db, storage } = useContext(AppContext);
+  const { db, storage, globalState } = useContext(AppContext);
   const { toast } = useToast();
+
+  const activeTenant = (globalState as any)?.activeTenant;
+  const tenantId = activeTenant?.Id;
 
   const [viewMode, setViewMode] = useState('overview');
   const [activeScreen, setActiveScreen] = useState('userLogin');
@@ -531,12 +502,13 @@ export default function AuthManager() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // ── Load from Sites/{tenantId} — AuthCustomization field ─────────────────
   useEffect(() => {
-    if (!db) return;
+    if (!db || !tenantId) { setLoading(false); return; }
     const load = async () => {
       setLoading(true);
       try {
-        const snap = await getDoc(doc(db, 'StoreConfigs', 'StoreConfig001'));
+        const snap = await getDoc(doc(db, 'Sites', tenantId));
         if (snap.exists()) {
           const saved = snap.data()?.AuthCustomization;
           if (saved) {
@@ -548,48 +520,72 @@ export default function AuthManager() {
           }
         }
       } catch (e) {
-        toast({ title: 'Could not load config', variant: 'destructive' });
+        toast({ title: 'Could not load auth config', variant: 'destructive' });
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, [db]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, tenantId]);
 
+  // ── Save to Sites/{tenantId} — merge AuthCustomization field ─────────────
   const handleSave = async () => {
-    if (!db) return;
+    if (!db || !tenantId) {
+      toast({ title: 'No active tenant', variant: 'destructive' });
+      return;
+    }
     setSaving(true);
     try {
-      await setDoc(doc(db, 'StoreConfigs', 'StoreConfig001'), { AuthCustomization: configs }, { merge: true });
-      toast({ title: '✅ Saved', description: 'Auth screen configuration updated.' });
+      await setDoc(doc(db, 'Sites', tenantId), {
+        AuthCustomization: configs,
+        TenantId: tenantId,
+        UpdatedAt: new Date(),
+      }, { merge: true });
+      toast({ title: 'Saved', description: `Auth config updated for ${activeTenant?.Name}.` });
     } catch (e) {
-      toast({ title: '❌ Save failed', variant: 'destructive' });
+      toast({ title: 'Save failed', variant: 'destructive' });
     } finally {
       setSaving(false);
     }
   };
 
-  const set = (path, value) => {
+  const set = (path: string, value: any) => {
     setConfigs(prev => {
       const updated = JSON.parse(JSON.stringify(prev));
       const keys = [activeScreen, ...path.split('.')];
-      let node = updated;
+      let node: any = updated;
       keys.slice(0, -1).forEach(k => { if (!node[k]) node[k] = {}; node = node[k]; });
       node[keys[keys.length - 1]] = value;
       return updated;
     });
   };
 
-  const cfg = configs[activeScreen];
+  const cfg = configs[activeScreen as keyof typeof configs];
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500 mx-auto mb-4" />
-        <p className="text-gray-600">Loading auth configuration...</p>
+  // ── Guards ────────────────────────────────────────────────────────────────
+  if (!tenantId) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <div className="text-center space-y-3">
+          <AlertCircle className="w-10 h-10 text-amber-400 mx-auto" />
+          <p className="font-semibold text-slate-700">No tenant selected</p>
+          <p className="text-sm text-slate-500">Select a tenant to configure auth screens.</p>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-emerald-500 mx-auto mb-3" />
+          <p className="text-sm text-slate-500">Loading auth config…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -601,21 +597,27 @@ export default function AuthManager() {
               <ChevronLeft className="w-4 h-4" /> All Screens
             </Button>
           )}
-          <h1 className="text-2xl md:text-3xl font-bold">
-            {viewMode === 'overview' ? 'Auth Screen Manager' : `Editing: ${SCREENS.find(s => s.key === activeScreen)?.label}`}
-          </h1>
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">
+              {viewMode === 'overview' ? 'Auth Screens' : `Editing: ${SCREENS.find(s => s.key === activeScreen)?.label}`}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {activeTenant?.Name} · <span className="font-mono">Sites/{tenantId}/AuthCustomization</span>
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="hidden sm:flex border rounded-lg overflow-hidden">
             {['overview', 'editor'].map(m => (
               <button key={m} onClick={() => setViewMode(m)}
-                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 capitalize transition-colors ${viewMode === m ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                className={`px-3 py-1.5 text-sm flex items-center gap-1.5 capitalize transition-colors
+                  ${viewMode === m ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
                 {m === 'overview' ? <LayoutDashboard className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}{m}
               </button>
             ))}
           </div>
           <Button onClick={handleSave} disabled={saving} className="bg-emerald-500 hover:bg-emerald-600">
-            {saving ? 'Saving...' : 'Save All Changes'}
+            {saving ? <><Loader2 className="w-4 h-4 mr-1 animate-spin" />Saving…</> : 'Save Changes'}
           </Button>
         </div>
       </div>
@@ -626,7 +628,7 @@ export default function AuthManager() {
           <p className="text-slate-500 text-sm">Click <strong>Edit</strong> to customise each login screen.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {SCREENS.map(screen => (
-              <OverviewCard key={screen.key} screen={screen} config={configs[screen.key]}
+              <OverviewCard key={screen.key} screen={screen} config={configs[screen.key as keyof typeof configs]}
                 onEdit={() => { setActiveScreen(screen.key); setViewMode('editor'); setActiveTab('content'); }} />
             ))}
           </div>
@@ -657,7 +659,7 @@ export default function AuthManager() {
 
           {/* Transition */}
           <Card style={{ backgroundColor: '#f0f4f8' }}>
-            <CardHeader><CardTitle className="text-lg">Image Transition Effect</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-lg">Image Transition</CardTitle></CardHeader>
             <CardContent>
               <div className="max-w-xs">
                 <Select value={cfg.transition || 'fade'} onValueChange={v => set('transition', v)}>
@@ -677,13 +679,13 @@ export default function AuthManager() {
 
           {/* Tabbed editor */}
           <div className="border rounded-xl overflow-hidden bg-white shadow-sm">
-            {/* Tab bar */}
             <div className="flex border-b bg-slate-50">
               {EDITOR_TABS.map(tab => {
                 const Icon = tab.icon;
                 return (
                   <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === tab.key ? 'border-emerald-500 text-emerald-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors border-b-2
+                      ${activeTab === tab.key ? 'border-emerald-500 text-emerald-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
                     <Icon className="w-4 h-4" /><span className="hidden sm:inline">{tab.label}</span>
                   </button>
                 );
@@ -691,184 +693,129 @@ export default function AuthManager() {
             </div>
 
             <div className="p-5">
-              {/* ── CONTENT TAB ── */}
+              {/* CONTENT TAB */}
               {activeTab === 'content' && (
                 <div className="space-y-6">
-                  {/* Layout */}
                   <div className="space-y-2">
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><Layout className="w-3.5 h-3.5 text-indigo-500" />Layout</Label>
                     <div className="flex gap-3">
                       {['split', 'center'].map(opt => (
                         <button key={opt} onClick={() => set('layout', opt)}
-                          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border-2 transition-all ${cfg.layout === opt ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                          className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border-2 transition-all
+                            ${cfg.layout === opt ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
                           {opt === 'split' ? '⬛⬜ Split' : '⬜ Center'}
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {/* Images */}
                   <div className="space-y-2">
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><ImageIcon className="w-3.5 h-3.5 text-rose-500" />Background Images</Label>
-                    <p className="text-xs text-slate-500">Upload or paste a URL. Saved to Firebase Storage.</p>
-                    <ImageListEditor images={cfg.images || []} onChange={imgs => set('images', imgs)} storage={storage} screenKey={activeScreen} />
+                    <ImageListEditor images={cfg.images || []} onChange={(imgs: string[]) => set('images', imgs)}
+                      storage={storage} db={db} tenantId={tenantId} screenKey={activeScreen} />
                   </div>
 
-                  {/* Text */}
                   <div className="space-y-3">
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><Type className="w-3.5 h-3.5 text-violet-500" />Text</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">Login Title</Label>
-                        <Input value={cfg.text.title} onChange={e => set('text.title', e.target.value)} className="bg-gray-50" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">Login Subtitle</Label>
-                        <Input value={cfg.text.subtitle} onChange={e => set('text.subtitle', e.target.value)} className="bg-gray-50" />
-                      </div>
+                      <div className="space-y-1.5"><Label className="text-xs text-slate-500">Login Title</Label>
+                        <Input value={cfg.text.title} onChange={e => set('text.title', e.target.value)} className="bg-gray-50" /></div>
+                      <div className="space-y-1.5"><Label className="text-xs text-slate-500">Login Subtitle</Label>
+                        <Input value={cfg.text.subtitle} onChange={e => set('text.subtitle', e.target.value)} className="bg-gray-50" /></div>
                     </div>
                     {activeScreen === 'userLogin' && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-slate-500">Register Title</Label>
-                          <Input value={cfg.text.registerTitle || ''} onChange={e => set('text.registerTitle', e.target.value)} className="bg-gray-50" />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-slate-500">Register Subtitle</Label>
-                          <Input value={cfg.text.registerSubtitle || ''} onChange={e => set('text.registerSubtitle', e.target.value)} className="bg-gray-50" />
-                        </div>
-                      </div>
-                    )}
-                    {activeScreen === 'affiliateLogin' && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-slate-500">Step 2 Title</Label>
-                          <Input value={cfg.text.step2Title || ''} onChange={e => set('text.step2Title', e.target.value)} className="bg-gray-50" />
-                        </div>
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-slate-500">Step 2 Subtitle</Label>
-                          <Input value={cfg.text.step2Subtitle || ''} onChange={e => set('text.step2Subtitle', e.target.value)} className="bg-gray-50" />
-                        </div>
+                        <div className="space-y-1.5"><Label className="text-xs text-slate-500">Register Title</Label>
+                          <Input value={(cfg.text as any).registerTitle || ''} onChange={e => set('text.registerTitle', e.target.value)} className="bg-gray-50" /></div>
+                        <div className="space-y-1.5"><Label className="text-xs text-slate-500">Register Subtitle</Label>
+                          <Input value={(cfg.text as any).registerSubtitle || ''} onChange={e => set('text.registerSubtitle', e.target.value)} className="bg-gray-50" /></div>
                       </div>
                     )}
                   </div>
 
-                  {/* Branding */}
                   <div className="space-y-3">
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><Layers className="w-3.5 h-3.5 text-amber-500" />Branding</Label>
-                    <Toggle checked={cfg.branding.showLogo} onChange={v => set('branding.showLogo', v)} label="Show Logo / Brand Name" />
+                    <Toggle checked={cfg.branding.showLogo} onChange={(v: boolean) => set('branding.showLogo', v)} label="Show Logo / Brand Name" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">Brand Name</Label>
-                        <Input value={cfg.branding.logoText} onChange={e => set('branding.logoText', e.target.value)} className="bg-gray-50" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">Logo Image URL</Label>
-                        <Input value={cfg.branding.logoUrl} onChange={e => set('branding.logoUrl', e.target.value)} placeholder="https://..." className="bg-gray-50" />
-                      </div>
+                      <div className="space-y-1.5"><Label className="text-xs text-slate-500">Brand Name</Label>
+                        <Input value={cfg.branding.logoText} onChange={e => set('branding.logoText', e.target.value)} className="bg-gray-50" /></div>
+                      <div className="space-y-1.5"><Label className="text-xs text-slate-500">Logo URL</Label>
+                        <Input value={cfg.branding.logoUrl} onChange={e => set('branding.logoUrl', e.target.value)} placeholder="https://..." className="bg-gray-50" /></div>
                     </div>
                   </div>
 
-                  {/* Options */}
                   <div className="space-y-1">
                     <Label className="flex items-center gap-1.5 text-sm font-medium mb-2"><ToggleRight className="w-3.5 h-3.5 text-teal-500" />Options</Label>
                     <div className="divide-y divide-gray-100">
                       {Object.entries(cfg.options).map(([key, val]) => (
-                        <Toggle key={key} checked={!!val} onChange={v => set(`options.${key}`, v)} label={OPTION_LABELS[key] || key} />
+                        <Toggle key={key} checked={!!val} onChange={(v: boolean) => set(`options.${key}`, v)} label={OPTION_LABELS[key] || key} />
                       ))}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ── BUTTONS TAB ── */}
+              {/* BUTTONS TAB */}
               {activeTab === 'buttons' && (
                 <div className="space-y-6">
-                  {/* Primary color / gradient */}
                   <div className="space-y-3">
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><Palette className="w-3.5 h-3.5 text-green-500" />Button Color</Label>
-                    <Toggle checked={!!cfg.button.gradient} onChange={v => set('button.gradient', v)} label="Use gradient (2 colors)" />
+                    <Toggle checked={!!cfg.button.gradient} onChange={(v: boolean) => set('button.gradient', v)} label="Use gradient (2 colors)" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <ColorRow label={cfg.button.gradient ? 'Color From' : 'Button Color'} value={cfg.button.color} onChange={v => set('button.color', v)} />
+                      <ColorRow label={cfg.button.gradient ? 'Color From' : 'Button Color'} value={cfg.button.color} onChange={(v: string) => set('button.color', v)} />
                       {cfg.button.gradient && (
-                        <ColorRow label="Color To" value={cfg.button.colorTo || '#0d9488'} onChange={v => set('button.colorTo', v)} />
+                        <ColorRow label="Color To" value={cfg.button.colorTo || '#0d9488'} onChange={(v: string) => set('button.colorTo', v)} />
                       )}
                     </div>
-                    {/* Live preview */}
-                    <div className={`h-11 ${cfg.button.radius || 'rounded-xl'} ${cfg.button.shadow || 'shadow-lg'} flex items-center justify-center text-sm font-semibold`}
+                    <div className={`h-10 ${cfg.button.radius || 'rounded-xl'} ${cfg.button.shadow || 'shadow-lg'} flex items-center justify-center text-sm font-semibold`}
                       style={buildBtnStyle(cfg.button)}>
-                      {cfg.button.loginText || 'Button Preview'}
+                      {cfg.button.loginText || 'Preview'}
                     </div>
                   </div>
-
-                  {/* Text color */}
-                  <ColorRow label="Button Text Color" value={cfg.button.textColor || '#ffffff'} onChange={v => set('button.textColor', v)} />
-
-                  {/* Radius */}
+                  <ColorRow label="Button Text Color" value={cfg.button.textColor || '#ffffff'} onChange={(v: string) => set('button.textColor', v)} />
                   <div className="space-y-1.5">
                     <Label className="text-xs text-slate-500">Button Shape</Label>
                     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                       {RADIUS_OPTIONS.map(r => (
                         <button key={r.value} onClick={() => set('button.radius', r.value)}
-                          className={`py-2 text-xs font-medium border-2 transition-all ${r.value} ${cfg.button.radius === r.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                          className={`py-2 text-xs font-medium border-2 transition-all ${r.value}
+                            ${cfg.button.radius === r.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500'}`}>
                           {r.label}
                         </button>
                       ))}
                     </div>
                   </div>
-
-                  {/* Shadow */}
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">Shadow Intensity</Label>
-                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                      {SHADOW_OPTIONS.map(s => (
-                        <button key={s.value} onClick={() => set('button.shadow', s.value)}
-                          className={`py-2 text-xs font-medium border-2 rounded-lg transition-all ${cfg.button.shadow === s.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Button texts */}
                   <div className="space-y-3 border-t pt-4">
                     <Label className="text-sm font-medium text-slate-700">Button Labels</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">{activeScreen === 'affiliateLogin' ? 'Submit Button' : 'Login Button'}</Label>
-                        <Input value={cfg.button.loginText} onChange={e => set('button.loginText', e.target.value)} />
-                      </div>
+                      <div className="space-y-1.5"><Label className="text-xs text-slate-500">Login Button</Label>
+                        <Input value={cfg.button.loginText} onChange={e => set('button.loginText', e.target.value)} /></div>
                       {activeScreen === 'userLogin' && (
-                        <div className="space-y-1.5">
-                          <Label className="text-xs text-slate-500">Register Button</Label>
-                          <Input value={cfg.button.registerText || ''} onChange={e => set('button.registerText', e.target.value)} />
-                        </div>
+                        <div className="space-y-1.5"><Label className="text-xs text-slate-500">Register Button</Label>
+                          <Input value={cfg.button.registerText || ''} onChange={e => set('button.registerText', e.target.value)} /></div>
                       )}
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* ── STYLING TAB ── */}
+              {/* STYLING TAB */}
               {activeTab === 'styling' && (
                 <div className="space-y-6">
-                  {/* Text styling */}
                   <div className="space-y-3">
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><Type className="w-3.5 h-3.5 text-violet-500" />Text Styling</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <ColorRow label="Title Color" value={cfg.text?.titleColor || '#111827'} onChange={v => set('text.titleColor', v)} />
-                      <ColorRow label="Subtitle Color" value={cfg.text?.subtitleColor || '#6b7280'} onChange={v => set('text.subtitleColor', v)} />
+                      <ColorRow label="Title Color" value={cfg.text?.titleColor || '#111827'} onChange={(v: string) => set('text.titleColor', v)} />
+                      <ColorRow label="Subtitle Color" value={cfg.text?.subtitleColor || '#6b7280'} onChange={(v: string) => set('text.subtitleColor', v)} />
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">Title Size</Label>
+                      <div className="space-y-1.5"><Label className="text-xs text-slate-500">Title Size</Label>
                         <Select value={cfg.text?.titleSize || 'text-3xl'} onValueChange={v => set('text.titleSize', v)}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>{FONT_SIZE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
                         </Select>
                       </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs text-slate-500">Title Weight</Label>
+                      <div className="space-y-1.5"><Label className="text-xs text-slate-500">Title Weight</Label>
                         <Select value={cfg.text?.titleWeight || 'font-bold'} onValueChange={v => set('text.titleWeight', v)}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>{FONT_WEIGHT_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
@@ -877,28 +824,27 @@ export default function AuthManager() {
                     </div>
                   </div>
 
-                  {/* Background effects */}
                   <div className="space-y-3 border-t pt-4">
-                    <Label className="flex items-center gap-1.5 text-sm font-medium"><ImageIcon className="w-3.5 h-3.5 text-rose-500" />Background Effects</Label>
-                    <SliderRow label="Overlay Opacity" value={cfg.style?.overlayOpacity ?? 30} min={0} max={90} onChange={v => set('style.overlayOpacity', v)} unit="%" />
-                    <SliderRow label="Image Blur" value={cfg.style?.imageBlur ?? 0} min={0} max={20} onChange={v => set('style.imageBlur', v)} unit="px" />
+                    <Label className="flex items-center gap-1.5 text-sm font-medium">Background Effects</Label>
+                    <SliderRow label="Overlay Opacity" value={cfg.style?.overlayOpacity ?? 30} min={0} max={90} onChange={(v: number) => set('style.overlayOpacity', v)} unit="%" />
+                    <SliderRow label="Image Blur" value={cfg.style?.imageBlur ?? 0} min={0} max={20} onChange={(v: number) => set('style.imageBlur', v)} unit="px" />
                   </div>
 
-                  {/* Form card */}
                   <div className="space-y-3 border-t pt-4">
-                    <Label className="flex items-center gap-1.5 text-sm font-medium"><Layout className="w-3.5 h-3.5 text-indigo-500" />Form Card</Label>
+                    <Label className="flex items-center gap-1.5 text-sm font-medium">Form Card</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <ColorRow label="Card Background" value={cfg.style?.cardBg || '#ffffff'} onChange={v => set('style.cardBg', v)} />
-                      <ColorRow label="Card Border Color" value={cfg.style?.cardBorder === 'transparent' ? '#ffffff' : (cfg.style?.cardBorder || '#ffffff')} onChange={v => set('style.cardBorder', v)} />
+                      <ColorRow label="Card Background" value={cfg.style?.cardBg || '#ffffff'} onChange={(v: string) => set('style.cardBg', v)} />
+                      <ColorRow label="Card Border" value={cfg.style?.cardBorder === 'transparent' ? '#ffffff' : (cfg.style?.cardBorder || '#ffffff')} onChange={(v: string) => set('style.cardBorder', v)} />
                     </div>
-                    <SliderRow label="Card Background Opacity" value={cfg.style?.cardBgOpacity ?? 100} min={10} max={100} onChange={v => set('style.cardBgOpacity', v)} unit="%" />
-                    <SliderRow label="Card Backdrop Blur" value={cfg.style?.cardBlur ?? 0} min={0} max={24} onChange={v => set('style.cardBlur', v)} unit="px" />
+                    <SliderRow label="Background Opacity" value={cfg.style?.cardBgOpacity ?? 100} min={10} max={100} onChange={(v: number) => set('style.cardBgOpacity', v)} unit="%" />
+                    <SliderRow label="Backdrop Blur" value={cfg.style?.cardBlur ?? 0} min={0} max={24} onChange={(v: number) => set('style.cardBlur', v)} unit="px" />
                     <div className="space-y-1.5">
-                      <Label className="text-xs text-slate-500">Card Border Radius</Label>
+                      <Label className="text-xs text-slate-500">Card Radius</Label>
                       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                         {RADIUS_OPTIONS.map(r => (
                           <button key={r.value} onClick={() => set('style.cardRadius', r.value)}
-                            className={`py-2 text-xs font-medium border-2 transition-all ${r.value} ${cfg.style?.cardRadius === r.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                            className={`py-2 text-xs font-medium border-2 transition-all ${r.value}
+                              ${cfg.style?.cardRadius === r.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500'}`}>
                             {r.label}
                           </button>
                         ))}
@@ -906,36 +852,16 @@ export default function AuthManager() {
                     </div>
                   </div>
 
-                  {/* Input fields */}
                   <div className="space-y-3 border-t pt-4">
                     <Label className="flex items-center gap-1.5 text-sm font-medium">Input Fields</Label>
-                    <ColorRow label="Input Border Color" value={cfg.style?.inputBorderColor || '#e5e7eb'} onChange={v => set('style.inputBorderColor', v)} />
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-slate-500">Input Border Radius</Label>
-                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                        {RADIUS_OPTIONS.map(r => (
-                          <button key={r.value} onClick={() => set('style.inputRadius', r.value)}
-                            className={`py-2 text-xs font-medium border-2 transition-all ${r.value} ${cfg.style?.inputRadius === r.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                            {r.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                    <ColorRow label="Border Color" value={cfg.style?.inputBorderColor || '#e5e7eb'} onChange={(v: string) => set('style.inputBorderColor', v)} />
                   </div>
 
-                  {/* Left panel */}
-                  {cfg.layout === 'split' && (
-                    <div className="space-y-3 border-t pt-4">
-                      <Label className="flex items-center gap-1.5 text-sm font-medium">Left Panel</Label>
-                      <Toggle checked={!!cfg.style?.leftPanelGlass} onChange={v => set('style.leftPanelGlass', v)} label="Glass effect on left panel content" />
-                    </div>
-                  )}
-
-                  {/* Firestore path */}
-                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-                    <p className="text-xs font-semibold text-blue-600 mb-1">📍 Firestore Location</p>
-                    <code className="text-xs text-blue-800 font-mono break-all">StoreConfigs/StoreConfig001/AuthCustomization/{activeScreen}</code>
-                    <p className="text-xs text-blue-500 mt-2">Changes apply on next page refresh.</p>
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 mt-4">
+                    <p className="text-xs font-semibold text-blue-600 mb-1">📍 Firestore path</p>
+                    <code className="text-xs text-blue-800 font-mono break-all">
+                      Sites/{tenantId}/AuthCustomization/{activeScreen}
+                    </code>
                   </div>
                 </div>
               )}

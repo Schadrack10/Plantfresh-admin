@@ -1,562 +1,269 @@
-import { useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { tenantService } from "@/services/firebase/tenantService";
 import { siteService } from "@/services/firebase/siteService";
-import { sectionTemplateService } from "@/services/firebase/sectionTemplateService";
-import { Site, Tenant, Theme, SectionTemplate } from "@/types";
+import { Site, Tenant, Theme } from "@/types";
 import AppContext from "../context/AppContext";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Trash2, Eye, ChevronDown, ChevronUp, Leaf, Shield, Star, Heart, Sparkles, Zap, Globe, Sun, Moon, Wind, Droplets, Flame, Snowflake, Flower2, TreePine, Recycle, Package, Award, CheckCircle, Coffee, Home as HomeIcon, Save, Download } from "lucide-react";
+import {
+  Plus, Trash2, ChevronLeft, Globe, GlobeLock,
+  Layers, Palette, Sparkles, Image, KeyRound, Loader2,
+} from "lucide-react";
 
-const SECTION_TYPES = ["Hero", "Text", "Features", "Contact"];
+import Features    from "./Features";
+import HeroBanner  from "./HeroBanner";
+import AuthManager from "./AuthManager";
 
-const ICON_OPTIONS = [
-  { value: 'Leaf', Icon: Leaf }, { value: 'Shield', Icon: Shield },
-  { value: 'Star', Icon: Star }, { value: 'Heart', Icon: Heart },
-  { value: 'Sparkles', Icon: Sparkles }, { value: 'Zap', Icon: Zap },
-  { value: 'Globe', Icon: Globe }, { value: 'Sun', Icon: Sun },
-  { value: 'Moon', Icon: Moon }, { value: 'Wind', Icon: Wind },
-  { value: 'Droplets', Icon: Droplets }, { value: 'Flame', Icon: Flame },
-  { value: 'Snowflake', Icon: Snowflake }, { value: 'Flower2', Icon: Flower2 },
-  { value: 'TreePine', Icon: TreePine }, { value: 'Recycle', Icon: Recycle },
-  { value: 'Package', Icon: Package }, { value: 'Award', Icon: Award },
-  { value: 'CheckCircle', Icon: CheckCircle }, { value: 'Coffee', Icon: Coffee },
-  { value: 'Home', Icon: HomeIcon },
-];
+const SECTION_TYPES = ["Hero", "Text", "Features", "Rooms", "Contact", "Banner", "Products", "Blog"];
 
-const getIcon = (name: string) => ICON_OPTIONS.find((o) => o.value === name)?.Icon || Leaf;
-
-const DEFAULT_FEATURES = {
-  heading: 'Clean Your Home, Love Your Planet',
-  headingHighlight: 'Love Your Planet',
-  subheading: 'Experience the perfect balance of powerful cleaning and environmental responsibility.',
-  badgeText: 'Award-Winning Formula',
-  backgroundColor: '#f9fafb',
-  headingColor: '#0f172a',
-  highlightColor: '#00e676',
-  bodyColor: '#475569',
-  badgeBg: '#dcfce7',
-  badgeTextColor: '#16a34a',
-  cardBg: '#ffffff',
-  cardBorder: '#e5e7eb',
-  cardRadius: 16,
-  iconColor: '#00e676',
-  paddingY: 80,
-  items: [
-    { id: '1', icon: 'Leaf', title: '100% Natural', description: 'Plant-based ingredients' },
-    { id: '2', icon: 'Shield', title: 'Non-Toxic', description: 'Safe for kids & pets' },
-    { id: '3', icon: 'Sparkles', title: 'Powerful Clean', description: 'Professional results' },
-    { id: '4', icon: 'Heart', title: 'Cruelty Free', description: 'Never tested on animals' },
-  ],
-};
-
-const DEFAULT_ROOMS = {
-  heading: 'Shop by Room',
-  headingColor: '#0f172a',
-  backgroundColor: '#f3f4f6',
-  cardRadius: 16,
-  paddingY: 80,
-  rooms: [] as Array<{ id: string; name: string; productCount: number; categoryId: string; imageUrl: string }>,
-};
+function tryParseJson(value: string, fallback: Record<string, unknown>) {
+  try { return JSON.parse(value) as Record<string, unknown>; }
+  catch { return fallback; }
+}
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
-const ColorRow = ({ label, value, onChange }: any) => (
-  <div className="space-y-1.5">
-    <Label className="text-xs text-slate-500">{label}</Label>
-    <div className="flex gap-2">
-      <input
-        type="color"
-        value={value || '#000000'}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-9 w-14 rounded-lg border border-gray-200 cursor-pointer p-0.5 flex-shrink-0"
-      />
-      <Input
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-        className="flex-1 bg-gray-50 font-mono text-sm"
-      />
-    </div>
-  </div>
-);
-
-const SliderRow = ({ label, value, min, max, onChange, unit = 'px' }: any) => (
-  <div className="space-y-1.5">
-    <div className="flex justify-between">
-      <Label className="text-xs text-slate-500">{label}</Label>
-      <span className="text-xs font-mono text-slate-600">{value}{unit}</span>
-    </div>
-    <input
-      type="range"
-      min={min}
-      max={max}
-      value={value}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className="w-full h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-emerald-500"
-    />
-  </div>
-);
-
-const SectionCard = ({ title, icon: Icon, children, defaultOpen = false, preview }: { title: string; icon: any; children: ReactNode; defaultOpen?: boolean; preview?: ReactNode; }) => {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <Card style={{ backgroundColor: '#f0f4f8' }}>
-      <CardHeader className="flex flex-row items-center justify-between cursor-pointer select-none py-4" onClick={() => setOpen((p) => !p)}>
-        <CardTitle className="flex items-center gap-2 text-base md:text-lg">
-          <Icon className="w-5 h-5 text-emerald-500 flex-shrink-0" />{title}
-        </CardTitle>
-        {open ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-      </CardHeader>
-      {open && (
-        <CardContent className="space-y-5 pt-0">
-          {preview && (
-            <div className="space-y-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-600 border-0 border-none">
-                <Eye className="w-4 h-4" /> Live Preview
-              </div>
-              {preview}
-            </div>
-          )}
-          {children}
-        </CardContent>
-      )}
-    </Card>
-  );
-};
-
-const FeaturesPreview = ({ cfg }: { cfg: typeof DEFAULT_FEATURES }) => (
-  <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm p-5" style={{ backgroundColor: cfg.backgroundColor }}>
-    <div className="text-center mb-4">
-      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium mb-2" style={{ backgroundColor: cfg.badgeBg, color: cfg.badgeTextColor }}>
-        <Award className="w-3 h-3" />{cfg.badgeText}
-      </div>
-      <h2 className="text-sm font-bold mb-1" style={{ color: cfg.headingColor }}>
-        {cfg.heading.replace(cfg.headingHighlight, '')}
-        <span style={{ color: cfg.highlightColor }}>{cfg.headingHighlight}</span>
-      </h2>
-      <p className="text-xs" style={{ color: cfg.bodyColor }}>{cfg.subheading.slice(0, 80)}...</p>
-    </div>
-    <div className="grid grid-cols-4 gap-2">
-      {cfg.items.slice(0, 4).map((item) => {
-        const Icon = getIcon(item.icon);
-        return (
-          <div key={item.id} className="border p-3 text-center" style={{ backgroundColor: cfg.cardBg, borderColor: cfg.cardBorder, borderRadius: `${cfg.cardRadius}px` }}>
-            <div className="w-8 h-8 mx-auto mb-1.5 rounded-full flex items-center justify-center" style={{ backgroundColor: `${cfg.iconColor}20` }}>
-              <Icon className="w-4 h-4" style={{ color: cfg.iconColor }} />
-            </div>
-            <p className="font-semibold text-[10px] mb-0.5 truncate" style={{ color: cfg.headingColor }}>{item.title}</p>
-            <p className="text-[9px] truncate" style={{ color: cfg.bodyColor }}>{item.description}</p>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-);
-
-const RoomsPreview = ({ cfg }: { cfg: typeof DEFAULT_ROOMS }) => (
-  <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm p-4" style={{ backgroundColor: cfg.backgroundColor }}>
-    <h2 className="text-sm font-bold mb-3" style={{ color: cfg.headingColor }}>{cfg.heading}</h2>
-    {cfg.rooms.length === 0 ? (
-      <p className="text-xs text-slate-400 text-center py-4">No room cards yet — add some below or sync from products.</p>
-    ) : (
-      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.min(cfg.rooms.length, 6)}, 1fr)` }}>
-        {cfg.rooms.slice(0, 6).map((room) => (
-          <div key={room.id} className="relative overflow-hidden aspect-square" style={{ borderRadius: `${cfg.cardRadius}px` }}>
-            {room.imageUrl ? <img src={room.imageUrl} alt={room.name} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-300 flex items-center justify-center"><HomeIcon className="w-4 h-4 text-slate-400" /></div>}
-            <div className="absolute inset-0 bg-black/40 flex flex-col justify-end p-1">
-              <p className="text-white font-bold text-[8px] leading-tight truncate">{room.name}</p>
-              <p className="text-white/70 text-[7px]">{room.productCount} Products</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
-);
-
 export default function Builder() {
-  const { tenantId } = useParams();
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const { globalState } = useContext(AppContext);
+  const { tenantId } = useParams<{ tenantId: string }>();
+  const navigate     = useNavigate();
+  const { toast }    = useToast();
+  const { globalState, setGlobalState } = useContext(AppContext);
 
-  const currentUser = globalState?.AuthenticatedUser || {};
-  const isSuperAdmin = currentUser?.role === 'SuperAdmin';
-  const currentUserId = currentUser?.uid || currentUser?.email || currentUser?.userId || "";
-  const currentTenantId = currentUser?.tenantId || "";
+  const currentUser  = globalState?.AuthenticatedUser as any;
+  const isSuperAdmin =
+    currentUser?.role === "SuperAdmin" ||
+    currentUser?.isSuperAdmin === true  ||
+    currentUser?.IsSuperAdmin === true;
 
-  const [tenant, setTenant] = useState<Tenant | null>(null);
-  const [site, setSite] = useState<Site | null>(null);
-  const [selectedPageId, setSelectedPageId] = useState<string>("");
-  const [newPageTitle, setNewPageTitle] = useState("");
-  const [newPageSlug, setNewPageSlug] = useState("");
-  const [sectionType, setSectionType] = useState<string>(SECTION_TYPES[0]);
-  const [sectionContent, setSectionContent] = useState<string>("{}");
-  const [theme, setTheme] = useState<Theme>({ PrimaryColor: "", SecondaryColor: "", BackgroundColor: "", TextColor: "" });
-  const [loading, setLoading] = useState(false);
-  const [featuresConfig, setFeaturesConfig] = useState<typeof DEFAULT_FEATURES>(DEFAULT_FEATURES);
-  const [roomsConfig, setRoomsConfig] = useState<typeof DEFAULT_ROOMS>(DEFAULT_ROOMS);
-  const [sectionTemplates, setSectionTemplates] = useState<SectionTemplate[]>([]);
-  const [templateName, setTemplateName] = useState("");
-  const [templateDescription, setTemplateDescription] = useState("");
+  const [tenant, setTenant]               = useState<Tenant | null>(null);
+  const [site, setSite]                   = useState<Site | null>(null);
+  const [selectedPageId, setSelectedPageId] = useState("");
+  const [newPageTitle, setNewPageTitle]   = useState("");
+  const [newPageSlug, setNewPageSlug]     = useState("");
+  const [sectionType, setSectionType]     = useState(SECTION_TYPES[0]);
+  const [sectionContent, setSectionContent] = useState("{}");
+  const [theme, setTheme]                 = useState<Theme>({
+    PrimaryColor: "", SecondaryColor: "", BackgroundColor: "", TextColor: "",
+  });
+  const [loading, setLoading]             = useState(false);
+  const [pageLoading, setPageLoading]     = useState(true);
 
-  const selectedPage = useMemo(() => site?.Pages?.find((page) => page.Id === selectedPageId) ?? null, [site, selectedPageId]);
-  const previewUrl = tenant?.CustomDomain || (tenant?.Subdomain ? `https://${tenant.Subdomain}.plantfresh.app` : "");
-  const canEdit = isSuperAdmin || tenant?.OwnerId === currentUserId || tenant?.Id === currentTenantId;
+  const selectedPage = useMemo(
+    () => site?.Pages?.find((p) => p.Id === selectedPageId) ?? null,
+    [site, selectedPageId]
+  );
+
+  const canEdit =
+    isSuperAdmin ||
+    (tenant as any)?.OwnerId === currentUser?.uid ||
+    (tenant as any)?.OwnerId === currentUser?.email ||
+    tenant?.Id === (currentUser?.tenantId || currentUser?.TenantId);
 
   useEffect(() => {
     if (!tenantId) return;
+    setGlobalState((prev: any) => ({
+      ...prev,
+      activeTenant: prev.activeTenant?.Id === tenantId
+        ? prev.activeTenant
+        : { ...(prev.activeTenant || {}), Id: tenantId, Name: tenant?.Name || "" },
+    }));
+  }, [tenantId, tenant?.Name]);
 
-    const loadTenantAndSite = async () => {
+  useEffect(() => {
+    if (!tenantId) return;
+    const load = async () => {
+      setPageLoading(true);
       try {
-        setLoading(true);
         const [tenantRecord, siteRecord] = await Promise.all([
-          tenantService.getTenant(tenantId as string),
-          siteService.getSite(tenantId as string),
+          tenantService.getTenant(tenantId),
+          siteService.getSite(tenantId),
         ]);
-
         if (!tenantRecord) {
           toast({ title: "Not found", description: "Tenant not found.", variant: "destructive" });
-          navigate("/tenants");
+          navigate(isSuperAdmin ? "/tenants" : "/");
           return;
         }
-
         setTenant(tenantRecord);
         setSite(siteRecord);
-      } catch (error) {
-        console.error(error);
-        toast({ title: "Load failed", description: "Unable to load tenant or site.", variant: "destructive" });
+      } catch (err) {
+        console.error(err);
+        toast({ title: "Load failed", variant: "destructive" });
       } finally {
-        setLoading(false);
+        setPageLoading(false);
       }
     };
-
-    loadTenantAndSite();
-  }, [tenantId, navigate, toast]);
+    load();
+  }, [tenantId]);
 
   useEffect(() => {
     if (!site) return;
-
-    if (site.Pages.length) {
-      setSelectedPageId((current) => current || site.Pages[0].Id);
+    if (site.Pages?.length && !selectedPageId) {
+      setSelectedPageId(site.Pages[0].Id);
     }
-
     setTheme({
-      PrimaryColor: site.Theme.PrimaryColor || "",
-      SecondaryColor: site.Theme.SecondaryColor || "",
-      BackgroundColor: site.Theme.BackgroundColor || "",
-      TextColor: site.Theme.TextColor || "",
+      PrimaryColor:   site.Theme?.PrimaryColor   || "",
+      SecondaryColor: site.Theme?.SecondaryColor || "",
+      BackgroundColor:site.Theme?.BackgroundColor|| "",
+      TextColor:      site.Theme?.TextColor      || "",
     });
-
-    const extracted = site.Pages.flatMap((page) => page.Sections.map((section) => ({ page, section })));
-    const featureSection = extracted.find(({ section }) => section.Type === 'Features');
-    const roomSection = extracted.find(({ section }) => section.Type === 'Rooms');
-
-    if (featureSection) {
-      setFeaturesConfig({ ...DEFAULT_FEATURES, ...featureSection.section.Content } as typeof DEFAULT_FEATURES);
-    } else {
-      setFeaturesConfig(DEFAULT_FEATURES);
-    }
-
-    if (roomSection) {
-      setRoomsConfig({ ...DEFAULT_ROOMS, ...roomSection.section.Content } as typeof DEFAULT_ROOMS);
-    } else {
-      setRoomsConfig(DEFAULT_ROOMS);
-    }
   }, [site]);
 
   useEffect(() => {
     const defaults: Record<string, string> = {
-      Hero: JSON.stringify({ heading: "Welcome to your store", subtitle: "Share your brand story.", buttonText: "Shop now" }, null, 2),
-      Text: JSON.stringify({ heading: "About us", body: "Describe your business and mission." }, null, 2),
+      Hero:     JSON.stringify({ heading: "Welcome", subtitle: "Your tagline here.", buttonText: "Shop now" }, null, 2),
+      Text:     JSON.stringify({ heading: "About us", body: "Describe your business." }, null, 2),
       Features: JSON.stringify({ items: ["Fast shipping", "Organic products", "24/7 support"] }, null, 2),
-      Contact: JSON.stringify({ email: "hello@example.com", phone: "123-456-7890", address: "Your address here" }, null, 2),
+      Contact:  JSON.stringify({ email: "hello@example.com", phone: "123-456-7890" }, null, 2),
     };
     setSectionContent(defaults[sectionType] || "{}");
   }, [sectionType]);
-
-  useEffect(() => {
-    if (!tenantId) return;
-    const loadTemplates = async () => {
-      try {
-        const templates = await sectionTemplateService.getTenantSectionTemplates(tenantId as string);
-        setSectionTemplates(templates);
-      } catch (error) {
-        console.error("Failed to load section templates:", error);
-      }
-    };
-    loadTemplates();
-  }, [tenantId]);
 
   const refreshSite = async () => {
     if (!tenantId) return;
     const latest = await siteService.getSite(tenantId);
     setSite(latest);
+    return latest;
   };
 
   const handlePublishToggle = async () => {
-    if (!tenant || !site) return;
-    const nextStatus = !site.Published;
+    if (!site) return;
+    const next = !site.Published;
     setLoading(true);
     try {
-      await siteService.publishSite(tenantId as string, nextStatus);
+      await siteService.publishSite(tenantId!, next);
       await refreshSite();
-      toast({ title: "Site updated", description: `Site is now ${nextStatus ? "published" : "unpublished"}.` });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Publish failed", description: "Unable to update publish status.", variant: "destructive" });
+      toast({ title: next ? "Site published" : "Site unpublished" });
+    } catch (err) {
+      toast({ title: "Failed", variant: "destructive" });
     } finally {
       setLoading(false);
     }
   };
 
   const handleAddPage = async () => {
-    if (!tenant || !newPageTitle || !newPageSlug) {
-      toast({ title: "Missing fields", description: "Please add a page title and slug.", variant: "destructive" });
+    if (!newPageTitle || !newPageSlug) {
+      toast({ title: "Missing fields", description: "Add a title and slug.", variant: "destructive" });
       return;
     }
     setLoading(true);
     try {
-      await siteService.addPage(tenantId as string, { Title: newPageTitle, Slug: newPageSlug, Sections: [] });
+      await siteService.addPage(tenantId!, { Title: newPageTitle, Slug: newPageSlug, Sections: [] });
       await refreshSite();
-      setNewPageTitle("");
-      setNewPageSlug("");
-      toast({ title: "Page added", description: `${newPageTitle} has been created.` });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Add failed", description: "Unable to create page.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSaveTheme = async () => {
-    if (!tenant) return;
-    setLoading(true);
-    try {
-      await siteService.updateSiteTheme(tenantId as string, {
-        PrimaryColor: theme.PrimaryColor,
-        SecondaryColor: theme.SecondaryColor,
-        BackgroundColor: theme.BackgroundColor,
-        TextColor: theme.TextColor,
-        FontFamily: site?.Theme?.FontFamily || "Inter, sans-serif",
-      });
-      await refreshSite();
-      toast({ title: "Theme saved", description: "Site theme updated." });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Save failed", description: "Unable to save theme.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAddSection = async () => {
-    if (!selectedPage || !tenant) return;
-    let parsedContent: Record<string, unknown>;
-    try {
-      parsedContent = JSON.parse(sectionContent) as Record<string, unknown>;
-    } catch (error) {
-      toast({ title: "Invalid section JSON", description: "Please provide valid JSON for section content.", variant: "destructive" });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await siteService.addSection(tenantId as string, selectedPage.Id, {
-        Type: sectionType,
-        Content: parsedContent,
-        Order: selectedPage.Sections.length + 1,
-      });
-      await refreshSite();
-      toast({ title: "Section added", description: `${sectionType} section has been added.` });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Add failed", description: "Unable to create section.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSavePage = async () => {
-    if (!selectedPage || !tenant) return;
-    setLoading(true);
-    try {
-      await siteService.updatePage(tenantId as string, selectedPage.Id, {
-        Title: selectedPage.Title,
-        Slug: selectedPage.Slug,
-      });
-      await refreshSite();
-      toast({ title: "Page saved", description: "Page settings updated." });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Save failed", description: "Unable to save page.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateSection = async (sectionId: string, updatedContent: Record<string, unknown>) => {
-    if (!selectedPage || !tenant) return;
-    setLoading(true);
-    try {
-      await siteService.updateSection(tenantId as string, selectedPage.Id, sectionId, {
-        Content: updatedContent,
-      });
-      await refreshSite();
-      toast({ title: "Section saved", description: "Section content updated." });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Update failed", description: "Unable to save section.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+      setNewPageTitle(""); setNewPageSlug("");
+      toast({ title: `Page "${newPageTitle}" added` });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setLoading(false); }
   };
 
   const handleDeletePage = async (pageId: string) => {
-    if (!tenant) return;
-    if (!confirm("Delete this page? This cannot be undone.")) return;
+    if (!confirm("Delete this page?")) return;
     setLoading(true);
     try {
-      await siteService.deletePage(tenantId as string, pageId);
+      await siteService.deletePage(tenantId!, pageId);
       await refreshSite();
       setSelectedPageId("");
-      toast({ title: "Page deleted", description: "Page has been removed." });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Delete failed", description: "Unable to delete page.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+      toast({ title: "Page deleted" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setLoading(false); }
   };
 
-  const saveFeaturePanels = async () => {
-    if (!tenant || !site) return;
+  const handleSavePage = async () => {
+    if (!selectedPage) return;
     setLoading(true);
     try {
-      const workingPages = [...site.Pages];
-      let featurePage = workingPages.find((page) => page.Slug === 'features' || page.Title.toLowerCase().includes('feature'));
-      if (!featurePage) {
-        featurePage = { Id: uid(), Title: 'Features', Slug: 'features', Sections: [] };
-        workingPages.push(featurePage);
-      }
-
-      const updateOrCreateSection = (type: string, content: unknown) => {
-        const existing = featurePage!.Sections.find((section) => section.Type === type);
-        if (existing) {
-          existing.Content = content as Record<string, unknown>;
-        } else {
-          featurePage!.Sections.push({ Id: uid(), Type: type, Content: content as Record<string, unknown>, Order: featurePage!.Sections.length + 1 });
-        }
-      };
-
-      updateOrCreateSection('Features', featuresConfig);
-      updateOrCreateSection('Rooms', roomsConfig);
-
-      await siteService.updateSite(tenantId as string, { Pages: workingPages });
-      await refreshSite();
-      toast({ title: 'Site updated', description: 'Features and room sections were saved.' });
-    } catch (error) {
-      console.error(error);
-      toast({ title: 'Save failed', description: 'Unable to persist features and room settings.', variant: 'destructive' });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const addFeatureItem = () => setFeaturesConfig((prev) => ({ ...prev, items: [...prev.items, { id: uid(), icon: 'Leaf', title: 'New Feature', description: 'Description here' }] }));
-  const removeFeatureItem = (id: string) => setFeaturesConfig((prev) => ({ ...prev, items: prev.items.filter((item) => item.id !== id) }));
-  const updateFeatureItem = (id: string, key: string, value: string) => {
-    setFeaturesConfig((prev) => ({ ...prev, items: prev.items.map((item) => item.id === id ? { ...item, [key]: value } : item) }));
-  };
-
-  const addRoom = () => setRoomsConfig((prev) => ({ ...prev, rooms: [...prev.rooms, { id: uid(), name: 'New Room', productCount: 0, categoryId: '', imageUrl: '' }] }));
-  const removeRoom = (id: string) => setRoomsConfig((prev) => ({ ...prev, rooms: prev.rooms.filter((room) => room.id !== id) }));
-  const updateRoom = (id: string, key: string, value: string | number) => setRoomsConfig((prev) => ({
-    ...prev,
-    rooms: prev.rooms.map((room) => room.id === id ? { ...room, [key]: value } : room),
-  }));
-
-  const handleSaveTemplate = async () => {
-    if (!tenantId || !templateName) {
-      toast({ title: "Missing fields", description: "Please provide a template name.", variant: "destructive" });
-      return;
-    }
-
-    let contentToSave: Record<string, unknown>;
-    try {
-      contentToSave = JSON.parse(sectionContent) as Record<string, unknown>;
-    } catch (error) {
-      toast({ title: "Invalid JSON", description: "Section content is not valid JSON.", variant: "destructive" });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const templateId = await sectionTemplateService.createSectionTemplate({
-        TenantId: tenantId as string,
-        Name: templateName,
-        Description: templateDescription,
-        Type: sectionType,
-        Content: contentToSave,
-        CreatedBy: currentUserId,
+      await siteService.updatePage(tenantId!, selectedPage.Id, {
+        Title: selectedPage.Title, Slug: selectedPage.Slug,
       });
-
-      setSectionTemplates((prev) => [
-        ...prev,
-        {
-          Id: templateId,
-          TenantId: tenantId as string,
-          Name: templateName,
-          Description: templateDescription,
-          Type: sectionType,
-          Content: contentToSave,
-          CreatedAt: new Date(),
-          CreatedBy: currentUserId,
-        },
-      ]);
-
-      setTemplateName("");
-      setTemplateDescription("");
-      toast({ title: "Template saved", description: `Section template "${templateName}" has been saved.` });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Save failed", description: "Unable to save section template.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+      toast({ title: "Page saved" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setLoading(false); }
   };
 
-  const handleLoadTemplate = (template: SectionTemplate) => {
-    setSectionContent(JSON.stringify(template.Content, null, 2));
-    setSectionType(template.Type);
-    toast({ title: "Template loaded", description: `Loaded template: ${template.Name}` });
-  };
-
-  const handleDeleteTemplate = async (templateId: string) => {
-    if (!confirm("Delete this section template? This cannot be undone.")) return;
-
+  const handleAddSection = async () => {
+    if (!selectedPage) return;
+    let parsed: Record<string, unknown>;
+    try { parsed = JSON.parse(sectionContent); }
+    catch { toast({ title: "Invalid JSON", variant: "destructive" }); return; }
     setLoading(true);
     try {
-      await sectionTemplateService.deleteSectionTemplate(templateId);
-      setSectionTemplates((prev) => prev.filter((t) => t.Id !== templateId));
-      toast({ title: "Template deleted", description: "Section template has been removed." });
-    } catch (error) {
-      console.error(error);
-      toast({ title: "Delete failed", description: "Unable to delete section template.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+      await siteService.addSection(tenantId!, selectedPage.Id, {
+        Type: sectionType, Content: parsed, Order: selectedPage.Sections.length + 1,
+      });
+      await refreshSite();
+      toast({ title: `${sectionType} section added` });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setLoading(false); }
   };
+
+  const handleUpdateSection = async (sectionId: string, content: Record<string, unknown>) => {
+    if (!selectedPage) return;
+    setLoading(true);
+    try {
+      await siteService.updateSection(tenantId!, selectedPage.Id, sectionId, { Content: content });
+      await refreshSite();
+      toast({ title: "Section saved" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setLoading(false); }
+  };
+
+  const handleDeleteSection = async (sectionId: string) => {
+    if (!selectedPage || !confirm("Delete this section?")) return;
+    setLoading(true);
+    try {
+      if (typeof (siteService as any).deleteSection === "function") {
+        await (siteService as any).deleteSection(tenantId!, selectedPage.Id, sectionId);
+      } else {
+        const updatedSections = selectedPage.Sections.filter((s) => s.Id !== sectionId);
+        await siteService.updatePage(tenantId!, selectedPage.Id, {
+          ...selectedPage, Sections: updatedSections,
+        } as any);
+      }
+      await refreshSite();
+      toast({ title: "Section deleted" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setLoading(false); }
+  };
+
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  const handleSaveTheme = async () => {
+    setLoading(true);
+    try {
+      await siteService.updateSiteTheme(tenantId!, {
+        PrimaryColor:    theme.PrimaryColor,
+        SecondaryColor:  theme.SecondaryColor,
+        BackgroundColor: theme.BackgroundColor,
+        TextColor:       theme.TextColor,
+        FontFamily:      site?.Theme?.FontFamily || "Inter, sans-serif",
+      });
+      await refreshSite();
+      toast({ title: "Theme saved" });
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+    finally { setLoading(false); }
+  };
+
+  // ── Loading / access states ───────────────────────────────────────────────
+  if (pageLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto" />
+          <p className="text-sm text-slate-500">Loading site builder…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!tenant || !site) {
     return (
-      <div className="p-4">
-        <div className="text-xl font-semibold">Loading tenant builder…</div>
+      <div className="p-6 space-y-4">
+        <h1 className="text-2xl font-bold text-red-600">Site not found</h1>
+        <p className="text-sm text-slate-500">This tenant does not have a site yet.</p>
+        {isSuperAdmin && <Button onClick={() => navigate("/tenants")}>Back to tenants</Button>}
       </div>
     );
   }
@@ -565,343 +272,298 @@ export default function Builder() {
     return (
       <div className="p-6 space-y-4">
         <h1 className="text-2xl font-bold">Access denied</h1>
-        <p className="text-sm text-slate-600">You do not have permission to edit this tenant. Only the tenant owner or a SuperAdmin can modify this site.</p>
-        <Button variant="secondary" onClick={() => navigate('/tenants')}>Back to tenant list</Button>
+        <p className="text-sm text-slate-500">You do not have permission to edit this site.</p>
+        {isSuperAdmin && <Button onClick={() => navigate("/tenants")}>Back to tenants</Button>}
       </div>
     );
   }
 
+  const previewUrl = (tenant as any)?.CustomDomain ||
+    ((tenant as any)?.Subdomain ? `https://${(tenant as any).Subdomain}.yourplatform.com` : "");
+
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Site Builder for {tenant.Name}</h1>
-          <p className="text-sm text-slate-600">Edit pages, theme, and rich feature sections for this tenant.</p>
-          {previewUrl && (
-            <p className="mt-2 text-sm text-slate-500">Preview URL: <a href={previewUrl} target="_blank" rel="noreferrer" className="text-green-600 hover:underline">{previewUrl}</a></p>
+    <div className="space-y-4 pb-12">
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          {isSuperAdmin && (
+            <Button variant="outline" size="sm" onClick={() => navigate("/tenants")} className="gap-1.5">
+              <ChevronLeft className="w-4 h-4" /> Tenants
+            </Button>
           )}
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold">{tenant.Name}</h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {(tenant as any).Subdomain && (
+                <span className="font-mono">{(tenant as any).Subdomain}.yourplatform.com</span>
+              )}
+              {previewUrl && (
+                <a href={previewUrl} target="_blank" rel="noreferrer"
+                  className="ml-2 text-indigo-500 hover:underline">Preview ↗</a>
+              )}
+            </p>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <Button onClick={handlePublishToggle} disabled={loading}>
-            {site.Published ? 'Unpublish site' : 'Publish site'}
-          </Button>
-          <Button variant="secondary" onClick={() => navigate('/tenants')}>Back to tenants</Button>
-        </div>
+
+        <Button
+          onClick={handlePublishToggle}
+          disabled={loading}
+          className={`gap-2 ${site.Published
+            ? "bg-amber-500 hover:bg-amber-600"
+            : "bg-emerald-500 hover:bg-emerald-600"}`}
+        >
+          {site.Published
+            ? <><GlobeLock className="w-4 h-4" />Unpublish</>
+            : <><Globe className="w-4 h-4" />Publish site</>}
+        </Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle>Pages</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {site.Pages.map((page) => (
-              <button
-                key={page.Id}
-                className={`w-full rounded-2xl border px-4 py-3 text-left transition ${selectedPageId === page.Id ? 'border-green-500 bg-green-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                onClick={() => setSelectedPageId(page.Id)}
-              >
-                <div className="font-semibold">{page.Title}</div>
-                <div className="text-sm text-slate-500">/{page.Slug}</div>
-              </button>
-            ))}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="new-page-title">Page title</Label>
-                <Input id="new-page-title" value={newPageTitle} onChange={(event) => setNewPageTitle(event.target.value)} placeholder="Shop page" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="new-page-slug">Page slug</Label>
-                <Input id="new-page-slug" value={newPageSlug} onChange={(event) => setNewPageSlug(event.target.value)} placeholder="shop" />
-              </div>
-              <Button onClick={handleAddPage} disabled={loading}>Add page</Button>
-            </div>
-          </CardContent>
-        </Card>
+      {/* ── Tabs ───────────────────────────────────────────────────────── */}
+      <Tabs defaultValue="pages">
+        <TabsList className="w-full justify-start overflow-x-auto flex-wrap h-auto gap-1 bg-slate-100 p-1 rounded-xl">
+          <TabsTrigger value="pages" className="gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            <Layers className="w-4 h-4" /> Pages
+          </TabsTrigger>
+          <TabsTrigger value="theme" className="gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            <Palette className="w-4 h-4" /> Theme
+          </TabsTrigger>
+          <TabsTrigger value="features" className="gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            <Sparkles className="w-4 h-4" /> Features & Config
+          </TabsTrigger>
+          <TabsTrigger value="banners" className="gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+            <Image className="w-4 h-4" /> Banners
+          </TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="auth" className="gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm">
+              <KeyRound className="w-4 h-4" /> Auth Screens
+            </TabsTrigger>
+          )}
+        </TabsList>
 
-        <div className="lg:col-span-2 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Theme</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="primary-color">Primary color</Label>
-                <Input id="primary-color" type="color" value={theme.PrimaryColor} onChange={(event) => setTheme({ ...theme, PrimaryColor: event.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="secondary-color">Secondary color</Label>
-                <Input id="secondary-color" type="color" value={theme.SecondaryColor} onChange={(event) => setTheme({ ...theme, SecondaryColor: event.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="background-color">Background color</Label>
-                <Input id="background-color" type="color" value={theme.BackgroundColor} onChange={(event) => setTheme({ ...theme, BackgroundColor: event.target.value })} />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="text-color">Text color</Label>
-                <Input id="text-color" type="color" value={theme.TextColor} onChange={(event) => setTheme({ ...theme, TextColor: event.target.value })} />
-              </div>
-            </CardContent>
-            <div className="flex justify-end p-4">
-              <Button onClick={handleSaveTheme} disabled={loading}>Save theme</Button>
-            </div>
-          </Card>
+        {/* ── PAGES TAB ──────────────────────────────────────────────── */}
+        <TabsContent value="pages" className="mt-4">
+          <div className="grid gap-4 lg:grid-cols-3">
+            {/* Page list */}
+            <Card className="lg:col-span-1">
+              <CardHeader><CardTitle className="text-base">Pages</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {site.Pages?.map((page) => (
+                  <button key={page.Id}
+                    className={`w-full rounded-xl border px-4 py-3 text-left transition
+                      ${selectedPageId === page.Id
+                        ? "border-indigo-500 bg-indigo-50"
+                        : "border-slate-200 bg-white hover:border-slate-300"}`}
+                    onClick={() => setSelectedPageId(page.Id)}>
+                    <div className="font-semibold text-sm">{page.Title}</div>
+                    <div className="text-xs text-slate-500">/{page.Slug}</div>
+                  </button>
+                ))}
 
-          {selectedPage ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Page settings</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="page-title">Title</Label>
-                    <Input id="page-title" value={selectedPage.Title} onChange={(event) => {
-                      const updated = { ...selectedPage, Title: event.target.value };
-                      setSite((current) => current ? { ...current, Pages: current.Pages.map((page) => page.Id === selectedPage.Id ? updated : page) } : current);
-                    }} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="page-slug">Slug</Label>
-                    <Input id="page-slug" value={selectedPage.Slug} onChange={(event) => {
-                      const updated = { ...selectedPage, Slug: event.target.value };
-                      setSite((current) => current ? { ...current, Pages: current.Pages.map((page) => page.Id === selectedPage.Id ? updated : page) } : current);
-                    }} />
-                  </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="destructive" onClick={() => handleDeletePage(selectedPage.Id)} disabled={loading}>Delete page</Button>
-                  <Button onClick={handleSavePage} disabled={loading}>Save page</Button>
+                <div className="border-t pt-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Add page</p>
+                  <Input placeholder="Page title" value={newPageTitle}
+                    onChange={(e) => setNewPageTitle(e.target.value)} className="h-8 text-sm" />
+                  <Input placeholder="slug (e.g. about)" value={newPageSlug}
+                    onChange={(e) => setNewPageSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                    className="h-8 text-sm font-mono" />
+                  <Button size="sm" onClick={handleAddPage} disabled={loading} className="w-full gap-1.5">
+                    <Plus className="w-4 h-4" /> Add page
+                  </Button>
                 </div>
               </CardContent>
             </Card>
-          ) : null}
 
-          {selectedPage ? (
-            <Card>
-              <CardHeader>
-                <CardTitle>Sections</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {selectedPage.Sections.map((section) => (
-                  <div key={section.Id} className="rounded-2xl border border-slate-200 p-4 bg-white">
-                    <div className="flex items-center justify-between gap-3 mb-3">
-                      <div>
-                        <div className="text-sm font-semibold">{section.Type}</div>
-                        <div className="text-xs text-slate-500">ID: {section.Id}</div>
+            {/* Page editor */}
+            <div className="lg:col-span-2 space-y-4">
+              {selectedPage ? (
+                <>
+                  {/* Page settings */}
+                  <Card>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base">Page settings</CardTitle>
+                        <Button size="sm" variant="destructive" onClick={() => handleDeletePage(selectedPage.Id)}
+                          disabled={loading} className="gap-1.5">
+                          <Trash2 className="w-3.5 h-3.5" /> Delete page
+                        </Button>
                       </div>
-                      <Button size="sm" variant="outline" onClick={async () => {
-                        if (!tenant) return;
-                        await handleUpdateSection(section.Id, section.Content);
-                      }}>
-                        Save section
-                      </Button>
-                    </div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Content JSON</label>
-                    <textarea
-                      value={JSON.stringify(section.Content, null, 2)}
-                      onChange={(event) => {
-                        const content = event.target.value;
-                        setSite((current) => current ? {
-                          ...current,
-                          Pages: current.Pages.map((page) => page.Id === selectedPage.Id ? {
-                            ...page,
-                            Sections: page.Sections.map((sec) => sec.Id === section.Id ? { ...sec, Content: tryParseJson(content, sec.Content) } : sec)
-                          } : page)
-                        } : current);
-                      }}
-                      rows={8}
-                      className="w-full rounded-2xl border border-slate-200 p-3 text-sm font-mono text-slate-900"
-                    />
-                  </div>
-                ))}
-                <div className="rounded-2xl border border-slate-200 p-4 bg-white">
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="section-type">Section type</Label>
-                      <select
-                        id="section-type"
-                        value={sectionType}
-                        onChange={(event) => setSectionType(event.target.value)}
-                        className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                      >
-                        {SECTION_TYPES.map((type) => (
-                          <option key={type} value={type}>{type}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="md:col-span-2 space-y-2">
-                      <Label htmlFor="section-content">Initial section payload</Label>
-                      <textarea
-                        id="section-content"
-                        rows={8}
-                        className="w-full rounded-2xl border border-slate-200 p-3 text-sm font-mono text-slate-900"
-                        value={sectionContent}
-                        onChange={(event) => setSectionContent(event.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4 flex justify-end">
-                    <Button onClick={handleAddSection} disabled={loading}>Add section</Button>
-                  </div>
-                </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-slate-500">Title</Label>
+                          <Input value={selectedPage.Title}
+                            onChange={(e) => {
+                              const updated = { ...selectedPage, Title: e.target.value };
+                              setSite((c) => c ? { ...c, Pages: c.Pages.map((p) => p.Id === selectedPage.Id ? updated : p) } : c);
+                            }} />
+                        </div>
+                        <div className="space-y-1.5">
+                          <Label className="text-xs text-slate-500">Slug</Label>
+                          <Input value={selectedPage.Slug}
+                            onChange={(e) => {
+                              const updated = { ...selectedPage, Slug: e.target.value };
+                              setSite((c) => c ? { ...c, Pages: c.Pages.map((p) => p.Id === selectedPage.Id ? updated : p) } : c);
+                            }} className="font-mono" />
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
+                        <Button size="sm" onClick={handleSavePage} disabled={loading}>Save page</Button>
+                      </div>
+                    </CardContent>
+                  </Card>
 
-                <div className="space-y-3 border-t pt-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Save as template</Label>
-                    <div className="grid gap-2 md:grid-cols-2">
-                      <Input
-                        placeholder="Template name"
-                        value={templateName}
-                        onChange={(e) => setTemplateName(e.target.value)}
-                        className="bg-white"
-                      />
-                      <Input
-                        placeholder="Brief description (optional)"
-                        value={templateDescription}
-                        onChange={(e) => setTemplateDescription(e.target.value)}
-                        className="bg-white"
-                      />
-                    </div>
-                    <Button onClick={handleSaveTemplate} disabled={loading} variant="outline" className="w-full gap-1.5">
-                      <Save className="w-4 h-4" />Save section as template
-                    </Button>
-                  </div>
-
-                  {sectionTemplates.length > 0 && (
-                    <div className="space-y-2 border-t pt-3">
-                      <Label className="text-sm font-semibold">Saved templates</Label>
-                      <div className="space-y-1.5">
-                        {sectionTemplates.map((template) => (
-                          <div key={template.Id} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white border border-slate-200 hover:bg-slate-50">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-sm font-medium truncate">{template.Name}</div>
-                              <div className="text-xs text-slate-500 truncate">{template.Type} — {template.Description}</div>
+                  {/* Sections */}
+                  <Card>
+                    <CardHeader><CardTitle className="text-base">Sections ({selectedPage.Sections?.length || 0})</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      {selectedPage.Sections?.map((section) => (
+                        <div key={section.Id} className="rounded-xl border border-slate-200 p-4 bg-white space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <span className="text-sm font-semibold">{section.Type}</span>
+                              <span className="ml-2 text-xs text-slate-400 font-mono">{section.Id}</span>
                             </div>
-                            <div className="flex gap-1 flex-shrink-0">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleLoadTemplate(template)}
-                                disabled={loading}
-                                className="gap-1"
-                              >
-                                <Download className="w-3 h-3" />Load
+                            <div className="flex gap-2">
+                              <Button size="sm" variant="outline" className="h-7 text-xs"
+                                onClick={() => handleUpdateSection(section.Id, section.Content)}>
+                                Save
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleDeleteTemplate(template.Id || "")}
-                                disabled={loading}
-                                className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                              >
+                              <Button size="sm" variant="outline" className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
+                                onClick={() => handleDeleteSection(section.Id)}>
                                 <Trash2 className="w-3 h-3" />
                               </Button>
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="grid gap-4">
-        <SectionCard title="Features Section" icon={Sparkles} preview={<FeaturesPreview cfg={featuresConfig} />} defaultOpen={true}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5"><Label className="text-xs text-slate-500">Badge Text</Label><Input value={featuresConfig.badgeText} onChange={(e) => setFeaturesConfig((prev) => ({ ...prev, badgeText: e.target.value }))} className="bg-white" /></div>
-            <div className="space-y-1.5"><Label className="text-xs text-slate-500">Main Heading</Label><Input value={featuresConfig.heading} onChange={(e) => setFeaturesConfig((prev) => ({ ...prev, heading: e.target.value }))} className="bg-white" /></div>
-            <div className="space-y-1.5"><Label className="text-xs text-slate-500">Highlighted Part</Label><Input value={featuresConfig.headingHighlight} onChange={(e) => setFeaturesConfig((prev) => ({ ...prev, headingHighlight: e.target.value }))} className="bg-white" /></div>
-            <div className="space-y-1.5"><Label className="text-xs text-slate-500">Subheading</Label><Input value={featuresConfig.subheading} onChange={(e) => setFeaturesConfig((prev) => ({ ...prev, subheading: e.target.value }))} className="bg-white" /></div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 border-t pt-4">
-            <ColorRow label="Section Background" value={featuresConfig.backgroundColor} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, backgroundColor: v }))} />
-            <ColorRow label="Heading Color" value={featuresConfig.headingColor} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, headingColor: v }))} />
-            <ColorRow label="Highlight Color" value={featuresConfig.highlightColor} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, highlightColor: v }))} />
-            <ColorRow label="Body Text" value={featuresConfig.bodyColor} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, bodyColor: v }))} />
-            <ColorRow label="Badge Background" value={featuresConfig.badgeBg} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, badgeBg: v }))} />
-            <ColorRow label="Badge Text" value={featuresConfig.badgeTextColor} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, badgeTextColor: v }))} />
-            <ColorRow label="Card Background" value={featuresConfig.cardBg} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, cardBg: v }))} />
-            <ColorRow label="Card Border" value={featuresConfig.cardBorder} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, cardBorder: v }))} />
-            <ColorRow label="Icon Color" value={featuresConfig.iconColor} onChange={(v: string) => setFeaturesConfig((prev) => ({ ...prev, iconColor: v }))} />
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 border-t pt-4">
-            <SliderRow label="Card Border Radius" value={featuresConfig.cardRadius} min={0} max={32} onChange={(v: number) => setFeaturesConfig((prev) => ({ ...prev, cardRadius: v }))} />
-            <SliderRow label="Section Padding" value={featuresConfig.paddingY} min={20} max={160} onChange={(v: number) => setFeaturesConfig((prev) => ({ ...prev, paddingY: v }))} />
-          </div>
-          <div className="border-t pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">Feature Items</Label>
-              <Button size="sm" variant="outline" onClick={addFeatureItem} className="gap-1.5"><Plus className="w-4 h-4" />Add Item</Button>
-            </div>
-            {featuresConfig.items.map((item, idx) => (
-              <div key={item.id} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-500">Item {idx + 1}</span>
-                  <button onClick={() => removeFeatureItem(item.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1.5"><Label className="text-xs text-slate-500">Title</Label><Input value={item.title} onChange={(e) => updateFeatureItem(item.id, 'title', e.target.value)} className="bg-gray-50" /></div>
-                  <div className="space-y-1.5"><Label className="text-xs text-slate-500">Description</Label><Input value={item.description} onChange={(e) => updateFeatureItem(item.id, 'description', e.target.value)} className="bg-gray-50" /></div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs text-slate-500">Icon</Label>
-                    <div className="grid grid-cols-6 gap-1.5 p-2 bg-gray-50 rounded-lg border border-gray-200 max-h-28 overflow-y-auto">
-                      {ICON_OPTIONS.map(({ value, Icon: Ico }) => (
-                        <button key={value} type="button" onClick={() => updateFeatureItem(item.id, 'icon', value)} className={`p-1.5 rounded-lg transition-all flex items-center justify-center ${item.icon === value ? 'bg-emerald-100 ring-2 ring-emerald-500' : 'hover:bg-gray-200'}`}>
-                          <Ico className="w-4 h-4" style={{ color: item.icon === value ? featuresConfig.iconColor : '#64748b' }} />
-                        </button>
+                          <Label className="text-xs text-slate-500">Content JSON</Label>
+                          <textarea
+                            value={JSON.stringify(section.Content, null, 2)}
+                            onChange={(e) => {
+                              setSite((c) => c ? {
+                                ...c,
+                                Pages: c.Pages.map((pg) => pg.Id === selectedPage.Id ? {
+                                  ...pg,
+                                  Sections: pg.Sections.map((s) =>
+                                    s.Id === section.Id
+                                      ? { ...s, Content: tryParseJson(e.target.value, s.Content) }
+                                      : s
+                                  ),
+                                } : pg),
+                              } : c);
+                            }}
+                            rows={6}
+                            className="w-full rounded-xl border border-slate-200 p-3 text-xs font-mono text-slate-800 resize-y"
+                          />
+                        </div>
                       ))}
+
+                      {/* Add section */}
+                      <div className="rounded-xl border border-dashed border-slate-300 p-4 space-y-3">
+                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Add section</p>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <Label className="text-xs text-slate-500">Section type</Label>
+                            <select value={sectionType} onChange={(e) => setSectionType(e.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white">
+                              {SECTION_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-1.5 sm:col-span-1">
+                            <Label className="text-xs text-slate-500">Initial payload (JSON)</Label>
+                            <textarea value={sectionContent}
+                              onChange={(e) => setSectionContent(e.target.value)}
+                              rows={4}
+                              className="w-full rounded-xl border border-slate-200 p-3 text-xs font-mono" />
+                          </div>
+                        </div>
+                        <Button size="sm" onClick={handleAddSection} disabled={loading} className="gap-1.5">
+                          <Plus className="w-4 h-4" /> Add section
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <Card>
+                  <CardContent className="py-12 text-center text-slate-400 text-sm">
+                    Select a page from the list to edit its sections.
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* ── THEME TAB ──────────────────────────────────────────────── */}
+        <TabsContent value="theme" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle>Site Theme</CardTitle></CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  { label: "Primary color",    key: "PrimaryColor"   },
+                  { label: "Secondary color",  key: "SecondaryColor" },
+                  { label: "Background color", key: "BackgroundColor"},
+                  { label: "Text color",       key: "TextColor"      },
+                ].map(({ label, key }) => (
+                  <div key={key} className="space-y-2">
+                    <Label className="text-sm">{label}</Label>
+                    <div className="flex gap-2">
+                      <input type="color" value={(theme as any)[key] || "#000000"}
+                        onChange={(e) => setTheme({ ...theme, [key]: e.target.value })}
+                        className="h-10 w-14 rounded-lg border border-gray-200 cursor-pointer p-0.5 flex-shrink-0" />
+                      <Input value={(theme as any)[key] || ""}
+                        onChange={(e) => setTheme({ ...theme, [key]: e.target.value })}
+                        className="font-mono text-sm" />
                     </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Live preview strip */}
+              <div className="rounded-xl overflow-hidden border border-slate-200">
+                <div className="h-3" style={{ background: theme.PrimaryColor || "#4f46e5" }} />
+                <div className="p-4 flex items-center gap-4" style={{ backgroundColor: theme.BackgroundColor || "#ffffff" }}>
+                  <div className="w-8 h-8 rounded-lg" style={{ backgroundColor: theme.PrimaryColor || "#4f46e5" }} />
+                  <div>
+                    <p className="font-semibold text-sm" style={{ color: theme.TextColor || "#111827" }}>
+                      {tenant.Name} — theme preview
+                    </p>
+                    <p className="text-xs" style={{ color: theme.SecondaryColor || "#6b7280" }}>
+                      Secondary / accent color
+                    </p>
+                  </div>
+                  <div className="ml-auto px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                    style={{ backgroundColor: theme.PrimaryColor || "#4f46e5" }}>
+                    Button
                   </div>
                 </div>
               </div>
-            ))}
-          </div>
-        </SectionCard>
 
-        <SectionCard title="Shop by Room / Category" icon={HomeIcon} preview={<RoomsPreview cfg={roomsConfig} />} defaultOpen={true}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5"><Label className="text-xs text-slate-500">Section Heading</Label><Input value={roomsConfig.heading} onChange={(e) => setRoomsConfig((prev) => ({ ...prev, heading: e.target.value }))} className="bg-white" /></div>
-            <ColorRow label="Heading Color" value={roomsConfig.headingColor} onChange={(v: string) => setRoomsConfig((prev) => ({ ...prev, headingColor: v }))} />
-            <ColorRow label="Section Background" value={roomsConfig.backgroundColor} onChange={(v: string) => setRoomsConfig((prev) => ({ ...prev, backgroundColor: v }))} />
-          </div>
-          <div className="border-t pt-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-semibold">Rooms</Label>
-              <Button size="sm" variant="outline" onClick={addRoom} className="gap-1.5"><Plus className="w-4 h-4" />Add Room</Button>
-            </div>
-            {roomsConfig.rooms.map((room, idx) => (
-              <div key={room.id} className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-500">Room {idx + 1}</span>
-                  <button onClick={() => removeRoom(room.id)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="space-y-1.5"><Label className="text-xs text-slate-500">Name</Label><Input value={room.name} onChange={(e) => updateRoom(room.id, 'name', e.target.value)} className="bg-gray-50" /></div>
-                  <div className="space-y-1.5"><Label className="text-xs text-slate-500">Products</Label><Input type="number" value={room.productCount} onChange={(e) => updateRoom(room.id, 'productCount', Number(e.target.value))} className="bg-gray-50" /></div>
-                  <div className="space-y-1.5"><Label className="text-xs text-slate-500">Image URL</Label><Input value={room.imageUrl} onChange={(e) => updateRoom(room.id, 'imageUrl', e.target.value)} className="bg-gray-50" /></div>
-                </div>
+              <div className="flex justify-end">
+                <Button onClick={handleSaveTheme} disabled={loading} className="bg-indigo-600 hover:bg-indigo-700">
+                  {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</> : "Save theme"}
+                </Button>
               </div>
-            ))}
-          </div>
-        </SectionCard>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-        <div className="flex justify-end">
-          <Button onClick={saveFeaturePanels} disabled={loading}>Save feature sections</Button>
-        </div>
-      </div>
+        {/* ── FEATURES TAB — reuses Features page scoped to this tenant ── */}
+        <TabsContent value="features" className="mt-4">
+          <Features />
+        </TabsContent>
+
+        <TabsContent value="banners" className="mt-4">
+          <HeroBanner />
+        </TabsContent>
+
+        {isSuperAdmin && (
+          <TabsContent value="auth" className="mt-4">
+            <AuthManager />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
-}
-
-function tryParseJson(value: string, fallback: Record<string, unknown>) {
-  try {
-    return JSON.parse(value) as Record<string, unknown>;
-  } catch {
-    return fallback;
-  }
 }

@@ -1,445 +1,336 @@
-import React, { useState, useContext } from "react";
+import { useState, useContext } from "react";
 import {
-  collection,
-  doc,
-  getDoc,
-  setDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
+  collection, doc, setDoc, addDoc, updateDoc,
+  deleteDoc, query, where, getDocs, serverTimestamp,
 } from "firebase/firestore";
 import * as XLSX from "xlsx";
-
 import { Input } from "@/components/ui/input";
 import AppContext from "../context/AppContext";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import UsefireFunctionsHook from "../utility/usefirebaseFuncHook";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { query, where, getDocs } from "firebase/firestore";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { set } from "date-fns";
+import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
+import { AlertCircle, Loader2, Upload } from "lucide-react";
 
 export default function Products() {
-  const [config, setConfig] = useState({
-    enableEditing: false,
-    enableDeletion: false,
-    enableBulkUpload: false,
-  });
+  const { globalState, setGlobalState, db, storage } = useContext(AppContext);
+  const { toast } = useToast();
+
+  const activeTenant = (globalState as any)?.activeTenant;
+  const tenantId = activeTenant?.Id;
 
   const [searchId, setSearchId] = useState("");
   const [loading, setLoading] = useState(false);
-  const [product, setProduct] = useState(null);
-  const [bulkData, setBulkData] = useState([]);
-  const {
-    globalState,
-    setGlobalState,
-    db,
-    storage,
-    uploadBytes,
-    ref,
-    getDownloadURL,
-  } = useContext(AppContext);
-  const { toast } = useToast();
-  const { updateStoreConfig } = UsefireFunctionsHook();
+  const [product, setProduct] = useState<any>(null);
+  const [bulkData, setBulkData] = useState<any[]>([]);
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [imgUploading, setImgUploading] = useState(false);
 
-  // Search product
+  // ── Search product scoped to tenant ──────────────────────────────────────
   const searchProduct = async () => {
+    if (!db || !tenantId) return;
     try {
       setLoading(true);
-
+      setProduct(null);
+      // Scope search to this tenant AND by ProductID
       const q = query(
         collection(db, "Products"),
-        where("ProductID", "==", searchId)
+        where("ProductID", "==", searchId),
+        where("TenantId", "==", tenantId)
       );
-
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        // No product found
-        alert("No product found with that ProductID");
-        setProduct(null);
-        setLoading(false);
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        toast({ title: "No product found", description: `No product with ID "${searchId}" in ${activeTenant?.Name}`, variant: "destructive" });
         return;
       }
-
-      // Found → extract the first matched document
-      const docSnap = querySnapshot.docs[0];
-      const data = docSnap.data();
-      console.log("Product found>>>>>>>>>>>, ", data)
-      setProduct({
-        id: docSnap.id,
-        ...data,
-      });
-
-      setLoading(false);
+      const docSnap = snap.docs[0];
+      setProduct({ id: docSnap.id, ...docSnap.data() });
     } catch (err) {
-      console.error("Error searching product:", err);
+      console.error("Search error:", err);
+      toast({ title: "Search failed", variant: "destructive" });
+    } finally {
       setLoading(false);
-      alert("An error occurred while searching.");
     }
   };
 
-  // Update product
+  // ── Update product ────────────────────────────────────────────────────────
   const updateProduct = async () => {
-    if (!product) return;
-    await updateDoc(doc(db, "Products", product.ProductID), product);
-    alert("Product updated");
+    if (!product || !db) return;
+    try {
+      await updateDoc(doc(db, "Products", product.id), {
+        ...product,
+        TenantId: tenantId, // always ensure TenantId is set
+        UpdatedAt: new Date(),
+      });
+      toast({ title: "Product updated" });
+    } catch (err) {
+      toast({ title: "Update failed", variant: "destructive" });
+    }
   };
 
-  // Delete product
+  // ── Delete product ────────────────────────────────────────────────────────
   const deleteProductAction = async () => {
-    if (!product) return;
-    await deleteDoc(doc(db, "Products", product.ProductID));
-    setProduct(null);
-    alert("Product deleted");
+    if (!product || !db) return;
+    if (!confirm("Are you sure you want to delete this product?")) return;
+    try {
+      await deleteDoc(doc(db, "Products", product.id));
+      setProduct(null);
+      toast({ title: "Product deleted" });
+    } catch (err) {
+      toast({ title: "Delete failed", variant: "destructive" });
+    }
   };
 
-  // Bulk upload handler
-  const handleBulkUpload = async (e) => {
-    const file = e.target.files[0];
+  // ── Bulk upload from Excel/CSV ────────────────────────────────────────────
+  const handleBulkUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file) return;
-
     const data = await file.arrayBuffer();
     const workbook = XLSX.read(data);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const json = XLSX.utils.sheet_to_json(sheet);
-
-    /*
-      Required spreadsheet columns:
-      - ProductID
-      -ProductTitle
-      - Description
-      - Gross
-      - Net
-      - Discount
-      - ImgBigUrl
-      -ImgSmallUrl
-      - Status
-      - Stock
-    */
-
-    setBulkData(json);
+    setBulkData(json as any[]);
+    toast({ title: `📋 ${json.length} products ready to upload` });
   };
 
-  // Upload bulk to Firestore
- 
-const uploadBulkToFirebase = async () => {
-  const Ref = collection(db, "Products");
-
-  for (const item of bulkData) {
-    await addDoc(Ref, {
-      Description: item.Description,
-      Gross: Number(item.Gross),
-      ProductTitle: item.ProductTitle,
-      Net: Number(item.Net),
-      Discount: Number(item.Discount),
-      ImgBigUrl: item.ImgBigUrl,
-      ImgSmallUrl: item.ImgSmallUrl,
-      Status: item.Status,
-      Stock: item.Stock,
-      Category: item.Category,
-      ProductID: item.ProductID,
-      Tags: item.Tags,
-      createdAt: new Date(),
-    });
-  }
-
-  alert("Bulk upload successful");
-};
-
-  // Handle product image upload
-  const handleProductImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const uploadBulkToFirebase = async () => {
+    if (!db || !tenantId) return;
+    setBulkUploading(true);
     try {
-      const fileRef = ref(storage, `products/${product.id}-${file.name}`);
-      await uploadBytes(fileRef, file);
-
-      const downloadURL = await getDownloadURL(fileRef);
-
-      // Update live preview and product state
-      setProduct((prev) => ({
-        ...prev,
-        ImgBigUrl: downloadURL,
-      }));
-
-      alert("Image uploaded successfully!");
-    } catch (error) {
-      console.error("Image upload failed:", error);
-      alert("Failed to upload image.");
+      const ref = collection(db, "Products");
+      for (const item of bulkData as any[]) {
+        await addDoc(ref, {
+          Description:  item.Description  || "",
+          Gross:        Number(item.Gross) || 0,
+          ProductTitle: item.ProductTitle  || "",
+          Net:          Number(item.Net)   || 0,
+          Discount:     Number(item.Discount) || 0,
+          ImgBigUrl:    item.ImgBigUrl    || "",
+          ImgSmallUrl:  item.ImgSmallUrl  || "",
+          Status:       item.Status       || "active",
+          Stock:        item.Stock        || 0,
+          Category:     item.Category     || "",
+          ProductID:    item.ProductID    || "",
+          Tags:         item.Tags         || "",
+          // ── Tenant identifier ──────────────────────────────────────────
+          TenantId:     tenantId,
+          TenantName:   activeTenant?.Name || "",
+          CreatedAt:    serverTimestamp(),
+        });
+      }
+      setBulkData([]);
+      toast({ title: `${bulkData.length} products uploaded to ${activeTenant?.Name}` });
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: "Bulk upload failed", description: err?.message, variant: "destructive" });
+    } finally {
+      setBulkUploading(false);
     }
   };
 
-  // Save featured products
+  // ── Product image upload → Firebase Storage + Assets collection ───────────
+  const handleProductImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !storage || !tenantId) return;
+    setImgUploading(true);
+    try {
+      const fileName = `${Date.now()}_${file.name}`;
+      const storagePath = `assets/${tenantId}/products/${fileName}`;
+      const storageRef = ref(storage, storagePath);
+      const task = uploadBytesResumable(storageRef, file);
+
+      await new Promise<void>((resolve, reject) => {
+        task.on("state_changed", () => {}, reject, async () => {
+          const url = await getDownloadURL(task.snapshot.ref);
+          // Save to Assets collection
+          await addDoc(collection(db, "Assets"), {
+            TenantId:    tenantId,
+            URL:         url,
+            Type:        "product-image",
+            FileName:    fileName,
+            StoragePath: storagePath,
+            ProductId:   product?.id || "",
+            CreatedAt:   serverTimestamp(),
+          });
+          setProduct((prev: any) => ({ ...prev, ImgBigUrl: url }));
+          resolve();
+        });
+      });
+      toast({ title: "Image uploaded" });
+    } catch (err: any) {
+      toast({ title: "Image upload failed", description: err?.message, variant: "destructive" });
+    } finally {
+      setImgUploading(false);
+    }
+  };
+
+  // ── Save featured products to Sites/{tenantId} ────────────────────────────
   const saveFeaturedProducts = async () => {
+    if (!db || !tenantId) {
+      toast({ title: "No active tenant", variant: "destructive" });
+      return;
+    }
     try {
       const featuredIDs =
-        globalState.StoreConfig?.ProductsCustomization?.FeaturedProductIDs || [
-          "", "", "", ""
-        ];
-  
-      const updatedConfig = {
-        ...globalState.StoreConfig,
-        ProductsCustomization: {
-          ...globalState.StoreConfig.ProductsCustomization,
-          FeaturedProductIDs: featuredIDs,
-        },
-      };
-  
-      setGlobalState((prev) => ({
-        ...prev,
-        StoreConfig: updatedConfig,
-      }));
-  
- 
-      console.log("Saved Featured Product IDs:", featuredIDs);
-      console.log("Updated StoreConfig after saving FeaturedProds:", updatedConfig);
-      
-      // 4️⃣ Save to Firestore (same convention you used in handleSave)
-      localStorage.setItem("StoreConfig", JSON.stringify(updatedConfig));
-      await updateStoreConfig("StoreConfig001", updatedConfig);
-  
-    } catch (error) {
-      console.error("Error saving featured products:", error);
-  
-      toast({
-        title: "Error",
-        description: "Failed to save featured product IDs.",
-        variant: "destructive",
-      });
+        (globalState as any)?.StoreConfig?.ProductsCustomization?.FeaturedProductIDs || ["", "", "", ""];
+
+      // Write to Sites/{tenantId} instead of StoreConfig001
+      await setDoc(doc(db, "Sites", tenantId), {
+        ProductsCustomization: { FeaturedProductIDs: featuredIDs },
+        TenantId: tenantId,
+        UpdatedAt: new Date(),
+      }, { merge: true });
+
+      toast({ title: "Featured products saved", description: `Saved to ${activeTenant?.Name}` });
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err?.message, variant: "destructive" });
     }
   };
-  
+
+  // ── No tenant guard ───────────────────────────────────────────────────────
+  if (!tenantId) {
+    return (
+      <div className="flex items-center justify-center min-h-[40vh]">
+        <div className="text-center space-y-3">
+          <AlertCircle className="w-10 h-10 text-amber-400 mx-auto" />
+          <p className="font-semibold text-slate-700">No tenant selected</p>
+          <p className="text-sm text-slate-500">Select a tenant from the sidebar to manage products.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 p-4">
-      {/* -------------------------------- */}
-      {/*        SEARCH PRODUCT            */}
-      {/* -------------------------------- */}
+      {/* Tenant context header */}
+      <div>
+        <h1 className="text-2xl font-bold">Products</h1>
+        <p className="text-xs text-slate-500 mt-0.5">
+          {activeTenant?.Name} · <span className="font-mono">TenantId: {tenantId}</span>
+        </p>
+      </div>
+
+      {/* ── Search Product ── */}
       <Card style={{ backgroundColor: "#f0f4f8" }}>
-        <CardHeader>
-          <CardTitle>Search Product</CardTitle>
-        </CardHeader>
-
+        <CardHeader><CardTitle>Search Product</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          {/* Search Bar */}
-          <Input
-            placeholder="Enter ProductId"
-            value={searchId}
-            onChange={(e) => setSearchId(e.target.value)}
-          />
-          <Button disabled={searchId.length < 3} onClick={searchProduct}>
-            Search
-          </Button>
+          <div className="flex gap-2">
+            <Input placeholder="Enter ProductID" value={searchId} onChange={(e) => setSearchId(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && searchId.length >= 3 && searchProduct()} />
+            <Button disabled={searchId.length < 3 || loading} onClick={searchProduct} className="whitespace-nowrap">
+              {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Searching…</> : "Search"}
+            </Button>
+          </div>
 
-          {/* PRODUCT FOUND */}
           {!loading && product && (
             <div className="space-y-4 mt-4">
-              {/* IMAGE PREVIEW BOX */}
+              {/* Image preview */}
               <div className="w-40 h-40 bg-gray-200 rounded-md flex items-center justify-center overflow-hidden">
-                {product.ImgBigUrl ? (
-                  <img
-                    src={product.ImgBigUrl}
-                    alt={product.Description}
-                    className="w-full h-full object-contain"
-                  />
-                ) : (
-                  <span className="text-gray-500 text-sm">No Image</span>
-                )}
+                {product.ImgBigUrl
+                  ? <img src={product.ImgBigUrl} alt={product.ProductTitle} className="w-full h-full object-contain" />
+                  : <span className="text-gray-500 text-sm">No Image</span>}
               </div>
 
-              {/* MANUAL BIG IMAGE URL INPUT */}
               <div className="space-y-1">
                 <Label>Big Image URL</Label>
-                <Input
-                  value={product.ImgBigUrl}
-                  onChange={(e) =>
-                    setProduct({ ...product, ImgBigUrl: e.target.value })
-                  }
-                />
+                <Input value={product.ImgBigUrl || ""} onChange={(e) => setProduct({ ...product, ImgBigUrl: e.target.value })} />
               </div>
-
-              {/* MANUAL SMALL IMAGE URL INPUT */}
               <div className="space-y-1">
                 <Label>Small Image URL</Label>
-                <Input
-                  value={product.ImgSmallUrl}
-                  onChange={(e) =>
-                    setProduct({ ...product, ImgSmallUrl: e.target.value })
-                  }
-                />
+                <Input value={product.ImgSmallUrl || ""} onChange={(e) => setProduct({ ...product, ImgSmallUrl: e.target.value })} />
               </div>
 
-              {/* UPLOAD NEW PRODUCT IMAGE */}
+              {/* Image upload */}
               <div className="space-y-1">
-                <Label>Upload New Image</Label>
-                <Input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleProductImageUpload}
-                />
-              </div>
-              {/* PRODUCT TITLE */}
-              <div>
-                <Label>Product Title</Label>
-                <Input
-                  value={product.ProductTitle}
-                  onChange={(e) =>
-                    setProduct({ ...product, ProductTitle: e.target.value })
-                  }
-                />
+                <Label>Upload New Image <span className="text-xs text-slate-400">(saved to Firebase Storage)</span></Label>
+                <label className="block cursor-pointer">
+                  <div className={`border-2 border-dashed rounded-lg p-4 text-center transition-colors
+                    ${imgUploading ? "border-emerald-300 bg-emerald-50" : "border-slate-300 hover:border-emerald-400 hover:bg-emerald-50"}`}>
+                    {imgUploading
+                      ? <div className="flex items-center justify-center gap-2 text-emerald-600 text-sm"><Loader2 className="w-4 h-4 animate-spin" />Uploading…</div>
+                      : <div className="flex items-center justify-center gap-2 text-slate-500 text-sm"><Upload className="w-4 h-4" />Click to upload</div>}
+                  </div>
+                  <input type="file" accept="image/*" className="hidden" disabled={imgUploading} onChange={handleProductImageUpload} />
+                </label>
               </div>
 
-                    {/* CATEGORY */}
-              <div>
-                <Label>Category</Label>
-                <Input
-                  value={product.Category}
-                  onChange={(e) =>
-                    setProduct({ ...product, Category: e.target.value })
-                  }
-                />
+              <div><Label>Product Title</Label>
+                <Input value={product.ProductTitle || ""} onChange={(e) => setProduct({ ...product, ProductTitle: e.target.value })} /></div>
+              <div><Label>Category</Label>
+                <Input value={product.Category || ""} onChange={(e) => setProduct({ ...product, Category: e.target.value })} /></div>
+              <div><Label>Description</Label>
+                <Input value={product.Description || ""} onChange={(e) => setProduct({ ...product, Description: e.target.value })} /></div>
+              <div><Label>Discount</Label>
+                <Input type="number" value={product.Discount || 0} onChange={(e) => setProduct({ ...product, Discount: Number(e.target.value) })} /></div>
+              <div><Label>Gross</Label>
+                <Input type="number" value={product.Gross || 0} onChange={(e) => setProduct({ ...product, Gross: Number(e.target.value) })} /></div>
+              <div><Label>Net</Label>
+                <Input type="number" value={product.Net || 0} onChange={(e) => setProduct({ ...product, Net: Number(e.target.value) })} /></div>
+              <div><Label>Stock</Label>
+                {/* Fixed original typo: Numbet → Number */}
+                <Input type="number" value={product.Stock || 0} onChange={(e) => setProduct({ ...product, Stock: Number(e.target.value) })} /></div>
+              <div><Label>Status</Label>
+                <Input value={product.Status || ""} onChange={(e) => setProduct({ ...product, Status: e.target.value })} /></div>
+
+              {/* Tenant info (read-only) */}
+              <div className="p-2 bg-indigo-50 border border-indigo-100 rounded text-xs text-indigo-700">
+                <span className="font-semibold">Tenant: </span>{product.TenantName || activeTenant?.Name}
+                <span className="ml-2 font-mono opacity-60">{product.TenantId}</span>
               </div>
 
-              {/* DESCRIPTION */}
-              <div>
-                <Label>Description</Label>
-                <Input
-                  value={product.Description}
-                  onChange={(e) =>
-                    setProduct({ ...product, Description: e.target.value })
-                  }
-                />
-              </div>
-
-                {/* DISCOUNT */}
-              <div>
-                <Label>Discount</Label>
-                <Input
-                  type="number"
-                  value={product.Discount}
-                  onChange={(e) =>
-                    setProduct({ ...product, Discount: Number(e.target.value) })
-                  }
-                />
-              </div>
-
-              {/* GROSS */}
-              <div>
-                <Label>Gross</Label>
-                <Input
-                  type="number"
-                  value={product.Gross}
-                  onChange={(e) =>
-                    setProduct({ ...product, Gross: Number(e.target.value) })
-                  }
-                />
-              </div>
-
-              {/* NET */}
-              <div>
-                <Label>Net</Label>
-                <Input
-                  type="number"
-                  value={product.Net}
-                  onChange={(e) =>
-                    setProduct({ ...product, Net: Number(e.target.value) })
-                  }
-                />
-              </div>
-
-                  {/* STOCK */}
-              <div>
-                <Label>Stock</Label>
-                <Input
-                  type="number"
-                  value={product.Stock}
-                  onChange={(e) =>
-                    setProduct({ ...product, Stock: Numbet(e.target.value) })
-                  }
-                />
-              </div>
-
-              {/* Status */}
-              <div>
-                <Label>Status</Label>
-                <Input
-                  value={product.Status}
-                  onChange={(e) =>
-                    setProduct({ ...product, Status: e.target.value })
-                  }
-                />
-              </div>
-
-              {/* ACTION BUTTONS */}
-              <div className="flex space-x-4">
+              <div className="flex gap-3">
                 <Button onClick={updateProduct}>Save Changes</Button>
-                <Button variant="destructive" onClick={deleteProductAction}>
-                  Delete Product
-                </Button>
+                <Button variant="destructive" onClick={deleteProductAction}>Delete Product</Button>
               </div>
             </div>
           )}
-
-          {loading && <div>Searching ...</div>}
         </CardContent>
       </Card>
 
-      {/* -------------------------------- */}
-      {/*        BULK UPLOAD              */}
-      {/* -------------------------------- */}
-
+      {/* ── Bulk Upload ── */}
       <Card style={{ backgroundColor: "#f0f4f8" }}>
-        <CardHeader>
-          <CardTitle>Bulk Product Upload</CardTitle>
-        </CardHeader>
-
+        <CardHeader><CardTitle>Bulk Product Upload</CardTitle></CardHeader>
         <CardContent className="space-y-4">
+          <p className="text-xs text-slate-500">
+            Products will be tagged with <span className="font-semibold">{activeTenant?.Name}</span> (TenantId: <span className="font-mono">{tenantId}</span>).
+            Required columns: ProductID, ProductTitle, Description, Gross, Net, Discount, ImgBigUrl, ImgSmallUrl, Status, Stock, Category.
+          </p>
           <Input type="file" accept=".xlsx,.csv" onChange={handleBulkUpload} />
-
           {bulkData.length > 0 && (
-            <Button onClick={uploadBulkToFirebase}>
-              Upload {bulkData.length} Products to Firebase
+            <Button onClick={uploadBulkToFirebase} disabled={bulkUploading} className="bg-emerald-500 hover:bg-emerald-600">
+              {bulkUploading
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Uploading…</>
+                : `Upload ${bulkData.length} Products to ${activeTenant?.Name}`}
             </Button>
           )}
         </CardContent>
       </Card>
 
-      {/* -------------------------------- */}
-      {/*        PRODUCT AD CARD           */}
-      {/* -------------------------------- */}
+      {/* ── Featured Products ── */}
       <Card style={{ backgroundColor: "#f0f4f8" }}>
-        <CardHeader>
-          <CardTitle>Featured Best Seller Products</CardTitle>
-        </CardHeader>
-
+        <CardHeader><CardTitle>Featured Best Seller Products</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          {/* Map through 4 indexes */}
+          <p className="text-xs text-slate-500">
+            These IDs are saved to <span className="font-mono">Sites/{tenantId}/ProductsCustomization/FeaturedProductIDs</span>.
+          </p>
           {Array.from({ length: 4 }).map((_, index) => (
             <div key={index}>
               <Label>Product ID #{index + 1}</Label>
               <Input
                 placeholder={`Enter ProductID for slot ${index + 1}`}
-                value={
-                  globalState.StoreConfig?.ProductsCustomization
-                    ?.FeaturedProductIDs?.[index] || ""
-                }
+                value={(globalState as any)?.StoreConfig?.ProductsCustomization?.FeaturedProductIDs?.[index] || ""}
                 onChange={(e) => {
                   const newIDs = [
-                    ...(globalState.StoreConfig?.ProductsCustomization
-                      ?.FeaturedProductIDs || ["", "", "", ""]),
+                    ...((globalState as any)?.StoreConfig?.ProductsCustomization?.FeaturedProductIDs || ["", "", "", ""]),
                   ];
                   newIDs[index] = e.target.value;
-
-                  setGlobalState((prev) => ({
+                  setGlobalState((prev: any) => ({
                     ...prev,
                     StoreConfig: {
                       ...prev.StoreConfig,
                       ProductsCustomization: {
-                        ...prev.StoreConfig.ProductsCustomization,
+                        ...prev.StoreConfig?.ProductsCustomization,
                         FeaturedProductIDs: newIDs,
                       },
                     },
@@ -448,8 +339,7 @@ const uploadBulkToFirebase = async () => {
               />
             </div>
           ))}
-
-          <Button onClick={saveFeaturedProducts}>
+          <Button onClick={saveFeaturedProducts} className="bg-emerald-500 hover:bg-emerald-600">
             Save Featured Product IDs
           </Button>
         </CardContent>
