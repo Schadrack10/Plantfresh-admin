@@ -1,100 +1,237 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Package, Image, Star, FileText } from "lucide-react";
+import { Package, Users, FileText, Globe, TrendingUp, ShoppingCart } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
 import AppContext from "../context/AppContext";
-import { collection, getDocs, getDoc, doc } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc, query, where } from "firebase/firestore";
+
+interface StatCard {
+  title: string;
+  value: number | string;
+  icon: any;
+  color: string;
+  bg: string;
+  trend?: string;
+}
 
 export default function Dashboard() {
   const { globalState, db, setGlobalState } = useContext(AppContext);
 
-  const [stats, setStats] = useState([]);
-  const [blogCount, setBlogCount] = useState(0);
+  const activeTenant   = (globalState as any)?.activeTenant;
+  const currentUser    = (globalState as any)?.AuthenticatedUser;
+  const platformName   = (globalState as any)?.platformName || "Sitecore Admin";
+  const isSuperAdmin   = currentUser?.role === "SuperAdmin";
+  const effectiveTenantId = activeTenant?.Id || currentUser?.tenantId || null;
 
-  /* Restore StoreConfig if missing */
+  const [stats, setStats]         = useState<StatCard[]>([]);
+  const [loading, setLoading]     = useState(false);
+  const [templateName, setTemplateName] = useState<string | null>(null);
+
+  // Rehydrate session on first mount
   useEffect(() => {
-    if (!globalState?.StoreConfig?.createdAt) {
-      const storedConfig = JSON.parse(
-        localStorage.getItem("StoreConfig") || "{}"
-      );
-      const authenticatedUser = JSON.parse(
-        localStorage.getItem("AuthenticatedUser") || "{}"
-      );
-
-      setGlobalState({
-        ...globalState,
-        StoreConfig: storedConfig,
-        AuthenticatedUser: authenticatedUser,
-      });
+    if (!currentUser) {
+      try {
+        const user   = JSON.parse(localStorage.getItem("AuthenticatedUser") || "null");
+        const config = JSON.parse(localStorage.getItem("StoreConfig")       || "{}");
+        if (user) setGlobalState((prev: any) => ({ ...prev, AuthenticatedUser: user, StoreConfig: config }));
+      } catch {}
     }
   }, []);
 
-  /* Fetch blog count */
+  // Resolve template name whenever active tenant changes
   useEffect(() => {
-const fetchBlogCount = async () => {
-  if (!db) return;
-  const snap = await getDoc(doc(db, 'StoreConfigs', 'StoreConfig001'));
-  if (snap.exists()) {
-    const posts = snap.data()?.BlogCustomization?.posts || [];
-    setBlogCount(posts.length);
-  }
-};
+    if (!db || !activeTenant?.TemplateId) { setTemplateName(null); return; }
+    const resolve = async () => {
+      try {
+        const snap = await getDoc(doc(db, "Templates", activeTenant.TemplateId));
+        if (snap.exists()) {
+          setTemplateName(snap.data()?.Name || activeTenant.TemplateId);
+        } else {
+          setTemplateName(activeTenant.TemplateId);
+        }
+      } catch {
+        setTemplateName(activeTenant.TemplateId);
+      }
+    };
+    resolve();
+  }, [db, activeTenant?.TemplateId]);
 
-    fetchBlogCount();
-  }, [db]);
-
-  /* Build stats cards */
+  // Re-fetch stats whenever the active tenant changes
   useEffect(() => {
-    const sc = globalState?.StoreConfig || {};
+    if (!db) return;
 
-    setStats([
-      {
-        title: "Products",
-        value:
-          sc?.ProductsCustomization?.FeaturedProductIDs?.length || 0,
-        icon: Package,
-        color: "text-blue-600",
-      },
-      {
-        title: "Hero Slides",
-        value:
-          sc?.HomeCustomization?.carouselSliders?.length || 0,
-        icon: Image,
-        color: "text-purple-600",
-      },
-      {
-        title: "Features",
-        value: 8,
-        icon: Star,
-        color: "text-yellow-600",
-      },
-      {
-        title: "Blog Posts",
-        value: blogCount,
-        icon: FileText,
-        color: "text-green-600",
-      },
-    ]);
-  }, [globalState?.StoreConfig, blogCount]);
+    const fetchStats = async () => {
+      setLoading(true);
+      try {
+        let productCount  = 0;
+        let userCount     = 0;
+        let orderCount    = 0;
+        let blogCount     = 0;
+        let tenantCount   = 0;
+
+        if (effectiveTenantId) {
+          const [prodSnap, userSnap, orderSnap] = await Promise.all([
+            getDocs(query(collection(db, "Products"), where("TenantId", "==", effectiveTenantId))),
+            getDocs(query(collection(db, "Users"),    where("TenantId", "==", effectiveTenantId))),
+            getDocs(query(collection(db, "Orders"),   where("TenantId", "==", effectiveTenantId))).catch(() => ({ size: 0 })),
+          ]);
+          productCount = prodSnap.size;
+          userCount    = userSnap.size;
+          orderCount   = (orderSnap as any).size || 0;
+
+          try {
+            const blogSnap = await getDocs(
+              query(collection(db, "BlogPosts"), where("TenantId", "==", effectiveTenantId))
+            );
+            blogCount = blogSnap.size;
+          } catch {}
+
+        } else if (isSuperAdmin) {
+          const [tSnap, pSnap, uSnap] = await Promise.all([
+            getDocs(collection(db, "Tenants")),
+            getDocs(collection(db, "Products")),
+            getDocs(collection(db, "Users")),
+          ]);
+          tenantCount  = tSnap.size;
+          productCount = pSnap.size;
+          userCount    = uSnap.size;
+        }
+
+        setStats(
+          effectiveTenantId
+            ? [
+                { title: "Products",   value: productCount, icon: Package,     color: "text-blue-600",   bg: "bg-blue-50"   },
+                { title: "Users",      value: userCount,    icon: Users,        color: "", bg: "", style: { color: "var(--admin-primary)", backgroundColor: "var(--admin-primary-10)" } },
+                { title: "Orders",     value: orderCount,   icon: ShoppingCart, color: "text-green-600",  bg: "bg-green-50"  },
+                { title: "Blog Posts", value: blogCount,    icon: FileText,     color: "text-purple-600", bg: "bg-purple-50" },
+              ]
+            : [
+                { title: "Total Tenants", value: tenantCount,  icon: Globe,        color: "", bg: "", style: { color: "var(--admin-primary)", backgroundColor: "var(--admin-primary-10)" } },
+                { title: "Products",      value: productCount, icon: Package,      color: "text-blue-600",   bg: "bg-blue-50"   },
+                { title: "Users",         value: userCount,    icon: Users,        color: "text-green-600",  bg: "bg-green-50"  },
+                { title: "Platform",      value: platformName, icon: TrendingUp,   color: "text-purple-600", bg: "bg-purple-50" },
+              ]
+        );
+      } catch (err) {
+        console.error("Dashboard stats error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [db, effectiveTenantId]);
 
   return (
-    <div className="p-4 md:p-6">
-      <h1 className="text-3xl font-bold mb-6">Dashboard</h1>
+    <div className="space-y-6">
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {stats.map((stat) => (
-          <Card key={stat.title}>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">
-                {stat.title}
-              </CardTitle>
-              <stat.icon className={`h-4 w-4 ${stat.color}`} />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
-            </CardContent>
-          </Card>
-        ))}
+      {/* Page header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">
+            {activeTenant ? activeTenant.Name : platformName}
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {activeTenant
+              ? `${activeTenant.Subdomain || ""} · ${currentUser?.role || "Admin"}`
+              : isSuperAdmin
+              ? "Platform overview — select a tenant in the sidebar to view their data"
+              : "Welcome back"}
+          </p>
+        </div>
+
+        {activeTenant && (
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "var(--admin-primary-20)", color: "var(--admin-primary)" }}>
+              Active: {activeTenant.Name}
+            </span>
+          </div>
+        )}
       </div>
+
+      {/* Stats grid */}
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="animate-pulse">
+                <CardContent className="h-24" />
+              </Card>
+            ))
+          : stats.map((stat) => (
+              <Card key={stat.title} className="overflow-hidden hover:shadow-md transition-shadow">
+                <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4 px-4">
+                  <CardTitle className="text-xs sm:text-sm font-medium text-slate-500 truncate">
+                    {stat.title}
+                  </CardTitle>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${stat.bg}`} style={stat.style}>
+                    <stat.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${stat.color}`} style={stat.style} />
+                  </div>
+                </CardHeader>
+                <CardContent className="pb-4 px-4">
+                  <div className="text-2xl sm:text-3xl font-bold text-slate-800 truncate">
+                    {stat.value}
+                  </div>
+                  {stat.trend && (
+                    <p className="text-xs text-slate-400 mt-0.5">{stat.trend}</p>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+      </div>
+
+      {/* Active tenant details */}
+      {activeTenant && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold text-slate-700">Tenant Details</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Name</p>
+              <p className="font-semibold text-slate-800">{activeTenant.Name}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Subdomain</p>
+              <p className="font-mono text-slate-700">{activeTenant.Subdomain || "—"}</p>
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Template</p>
+              <p className="text-slate-700">
+                {templateName
+                  ? templateName
+                  : activeTenant.TemplateId
+                  ? <span className="text-slate-400 italic">Loading…</span>
+                  : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] text-slate-400 uppercase tracking-wide mb-0.5">Admin email</p>
+              <p className="text-slate-700 truncate">{(activeTenant as any).AdminEmail || "—"}</p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Logged-in user summary */}
+      <Card className="border border-slate-200">
+        <CardContent className="flex items-center gap-4 py-4">
+          <div
+            className="w-11 h-11 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0"
+            style={{ backgroundColor: "#4f46e5" }}
+          >
+            {(currentUser?.email?.[0] || "?").toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-slate-800 truncate">{currentUser?.email || "—"}</p>
+            <p className="text-xs text-slate-400">{currentUser?.role || "Admin"}</p>
+          </div>
+          <div className="ml-auto flex-shrink-0">
+            <span className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "var(--admin-primary-20)", color: "var(--admin-primary)" }}>
+              {currentUser?.role || "Admin"}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
