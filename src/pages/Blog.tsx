@@ -4,6 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { Plus, Pencil, Trash2, Upload, Loader2, AlertCircle } from "lucide-react";
 import AppContext from "../context/AppContext";
 import { useToast } from "@/hooks/use-toast";
@@ -39,6 +42,10 @@ export default function Blog() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [imagePreview, setImagePreview] = useState("");
   const prevTenantId = useRef<string | undefined>(undefined);
+
+  // Confirmation dialog state
+  const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // ── Load from Sites/{tenantId} when tenant changes ────────────────────────
   useEffect(() => {
@@ -187,10 +194,15 @@ export default function Blog() {
   };
 
   // ── Delete post ───────────────────────────────────────────────────────────
-  const handleDelete = async (id: string) => {
-    if (!confirm("Delete this post?") || !db || !tenantId) return;
+  const handleOpenDeleteConfirm = (id: string) => {
+    setDeleteTarget(id);
+    setOpenDeleteConfirm(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget || !db || !tenantId) return;
     try {
-      const updatedPosts = posts.filter((p) => p.id !== id);
+      const updatedPosts = posts.filter((p) => p.id !== deleteTarget);
       await setDoc(doc(db, "Sites", tenantId), {
         BlogCustomization: { posts: updatedPosts },
         TenantId: tenantId,
@@ -198,6 +210,8 @@ export default function Blog() {
       }, { merge: true });
       setPosts(updatedPosts);
       toast({ title: " Post Deleted" });
+      setOpenDeleteConfirm(false);
+      setDeleteTarget(null);
     } catch (err) {
       toast({ title: "Delete failed", variant: "destructive" });
     }
@@ -392,7 +406,7 @@ export default function Blog() {
                   <Button size="sm" variant="outline" onClick={() => handleEdit(post)} className="flex-1">
                     <Pencil className="h-4 w-4 mr-1" /> Edit
                   </Button>
-                  <Button size="sm" variant="destructive" onClick={() => handleDelete(post.id)} className="flex-1">
+                  <Button size="sm" variant="destructive" onClick={() => handleOpenDeleteConfirm(post.id)} className="flex-1">
                     <Trash2 className="h-4 w-4 mr-1" /> Delete
                   </Button>
                 </div>
@@ -401,6 +415,28 @@ export default function Blog() {
           ))}
         </div>
       ) : null}
+
+      {/* Delete Post Confirmation Modal */}
+      <Dialog open={openDeleteConfirm} onOpenChange={setOpenDeleteConfirm}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg text-red-700">🗑️ Delete Post</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">
+                Are you sure you want to delete this blog post? This action cannot be undone.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="secondary" onClick={() => setOpenDeleteConfirm(false)} className="w-full sm:w-auto">Cancel</Button>
+            <Button onClick={handleDelete} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white">
+              Delete Post
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

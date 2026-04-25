@@ -5,6 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { tenantService } from "@/services/firebase/tenantService";
 import { siteService } from "@/services/firebase/siteService";
 import { Site, Tenant, Theme } from "@/types";
@@ -52,6 +55,12 @@ export default function Builder() {
   });
   const [loading, setLoading]             = useState(false);
   const [pageLoading, setPageLoading]     = useState(true);
+
+  // Confirmation dialog states
+  const [openDeletePageConfirm, setOpenDeletePageConfirm] = useState(false);
+  const [deletePageTarget, setDeletePageTarget] = useState<string | null>(null);
+  const [openDeleteSectionConfirm, setOpenDeleteSectionConfirm] = useState(false);
+  const [deleteSectionTarget, setDeleteSectionTarget] = useState<string | null>(null);
 
   const selectedPage = useMemo(
     () => site?.Pages?.find((p) => p.Id === selectedPageId) ?? null,
@@ -160,14 +169,21 @@ export default function Builder() {
     finally { setLoading(false); }
   };
 
-  const handleDeletePage = async (pageId: string) => {
-    if (!confirm("Delete this page?")) return;
+  const handleOpenDeletePageConfirm = (pageId: string) => {
+    setDeletePageTarget(pageId);
+    setOpenDeletePageConfirm(true);
+  };
+
+  const handleDeletePage = async () => {
+    if (!deletePageTarget) return;
     setLoading(true);
     try {
-      await siteService.deletePage(tenantId!, pageId);
+      await siteService.deletePage(tenantId!, deletePageTarget);
       await refreshSite();
       setSelectedPageId("");
       toast({ title: "Page deleted" });
+      setOpenDeletePageConfirm(false);
+      setDeletePageTarget(null);
     } catch { toast({ title: "Failed", variant: "destructive" }); }
     finally { setLoading(false); }
   };
@@ -211,20 +227,27 @@ export default function Builder() {
     finally { setLoading(false); }
   };
 
-  const handleDeleteSection = async (sectionId: string) => {
-    if (!selectedPage || !confirm("Delete this section?")) return;
+  const handleOpenDeleteSectionConfirm = (sectionId: string) => {
+    setDeleteSectionTarget(sectionId);
+    setOpenDeleteSectionConfirm(true);
+  };
+
+  const handleDeleteSection = async () => {
+    if (!selectedPage || !deleteSectionTarget) return;
     setLoading(true);
     try {
       if (typeof (siteService as any).deleteSection === "function") {
-        await (siteService as any).deleteSection(tenantId!, selectedPage.Id, sectionId);
+        await (siteService as any).deleteSection(tenantId!, selectedPage.Id, deleteSectionTarget);
       } else {
-        const updatedSections = selectedPage.Sections.filter((s) => s.Id !== sectionId);
+        const updatedSections = selectedPage.Sections.filter((s) => s.Id !== deleteSectionTarget);
         await siteService.updatePage(tenantId!, selectedPage.Id, {
           ...selectedPage, Sections: updatedSections,
         } as any);
       }
       await refreshSite();
       toast({ title: "Section deleted" });
+      setOpenDeleteSectionConfirm(false);
+      setDeleteSectionTarget(null);
     } catch { toast({ title: "Failed", variant: "destructive" }); }
     finally { setLoading(false); }
   };
@@ -251,7 +274,7 @@ export default function Builder() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-3">
-          <Loader2 className="w-10 h-10 animate-spin text-indigo-500 mx-auto" />
+          <Loader2 className="w-10 h-10 animate-spin mx-auto" style={{ color: "var(--admin-primary)" }} />
           <p className="text-sm text-slate-500">Loading site builder…</p>
         </div>
       </div>
@@ -299,7 +322,7 @@ export default function Builder() {
               )}
               {previewUrl && (
                 <a href={previewUrl} target="_blank" rel="noreferrer"
-                  className="ml-2 text-indigo-500 hover:underline">Preview ↗</a>
+                  className="ml-2 hover:underline" style={{ color: "var(--admin-primary)" }}>Preview ↗</a>
               )}
             </p>
           </div>
@@ -351,8 +374,9 @@ export default function Builder() {
                   <button key={page.Id}
                     className={`w-full rounded-xl border px-4 py-3 text-left transition
                       ${selectedPageId === page.Id
-                        ? "border-indigo-500 bg-indigo-50"
+                        ? ""
                         : "border-slate-200 bg-white hover:border-slate-300"}`}
+                    style={selectedPageId === page.Id ? { borderColor: "var(--admin-primary)", backgroundColor: "var(--admin-primary-10)" } : {}}
                     onClick={() => setSelectedPageId(page.Id)}>
                     <div className="font-semibold text-sm">{page.Title}</div>
                     <div className="text-xs text-slate-500">/{page.Slug}</div>
@@ -382,7 +406,7 @@ export default function Builder() {
                     <CardHeader>
                       <div className="flex items-center justify-between">
                         <CardTitle className="text-base">Page settings</CardTitle>
-                        <Button size="sm" variant="destructive" onClick={() => handleDeletePage(selectedPage.Id)}
+                        <Button size="sm" variant="destructive" onClick={() => handleOpenDeletePageConfirm(selectedPage.Id)}
                           disabled={loading} className="gap-1.5">
                           <Trash2 className="w-3.5 h-3.5" /> Delete page
                         </Button>
@@ -430,7 +454,7 @@ export default function Builder() {
                                 Save
                               </Button>
                               <Button size="sm" variant="outline" className="h-7 text-xs border-red-200 text-red-600 hover:bg-red-50"
-                                onClick={() => handleDeleteSection(section.Id)}>
+                                onClick={() => handleOpenDeleteSectionConfirm(section.Id)}>
                                 <Trash2 className="w-3 h-3" />
                               </Button>
                             </div>
@@ -541,7 +565,7 @@ export default function Builder() {
               </div>
 
               <div className="flex justify-end">
-                <Button onClick={handleSaveTheme} disabled={loading} className="bg-indigo-600 hover:bg-indigo-700">
+                <Button onClick={handleSaveTheme} disabled={loading} style={{ backgroundColor: "var(--admin-btn-bg)", color: "var(--admin-btn-text)" }}>
                   {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving…</> : "Save theme"}
                 </Button>
               </div>
@@ -564,6 +588,50 @@ export default function Builder() {
           </TabsContent>
         )}
       </Tabs>
+
+      {/* Delete Page Confirmation Modal */}
+      <Dialog open={openDeletePageConfirm} onOpenChange={setOpenDeletePageConfirm}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg text-red-700">🗑️ Delete Page</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">
+                Are you sure you want to delete this page? This action cannot be undone.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="secondary" onClick={() => setOpenDeletePageConfirm(false)} className="w-full sm:w-auto">Cancel</Button>
+            <Button onClick={handleDeletePage} disabled={loading} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white">
+              {loading ? "Deleting..." : "Delete Page"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Section Confirmation Modal */}
+      <Dialog open={openDeleteSectionConfirm} onOpenChange={setOpenDeleteSectionConfirm}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg text-red-700">🗑️ Delete Section</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">
+                Are you sure you want to delete this section? This action cannot be undone.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="secondary" onClick={() => setOpenDeleteSectionConfirm(false)} className="w-full sm:w-auto">Cancel</Button>
+            <Button onClick={handleDeleteSection} disabled={loading} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white">
+              {loading ? "Deleting..." : "Delete Section"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

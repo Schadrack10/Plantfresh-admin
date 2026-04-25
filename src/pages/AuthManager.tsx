@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import {
   ChevronLeft, LayoutDashboard, Pencil, Eye,
-  User, Users, Shield, Type, Image as ImageIcon,
+  User, Users, Type, Image as ImageIcon,
   Palette, Layout, ToggleRight, Layers,
   SkipBack, SkipForward, Play, Pause,
   Upload, Loader2, Trash2, Plus, Sliders, AlertCircle,
@@ -26,11 +26,6 @@ const RADIUS_OPTIONS = [
   { value: 'rounded-xl', label: 'Large' }, { value: 'rounded-2xl', label: 'XL' },
   { value: 'rounded-full', label: 'Pill' },
 ];
-const SHADOW_OPTIONS = [
-  { value: '', label: 'None' }, { value: 'shadow-sm', label: 'Small' },
-  { value: 'shadow-md', label: 'Medium' }, { value: 'shadow-lg', label: 'Large' },
-  { value: 'shadow-xl', label: 'XL' }, { value: 'shadow-2xl', label: '2XL' },
-];
 const FONT_SIZE_OPTIONS = [
   { value: 'text-lg', label: 'Small' }, { value: 'text-xl', label: 'Medium' },
   { value: 'text-2xl', label: 'Large' }, { value: 'text-3xl', label: 'XL' },
@@ -42,6 +37,7 @@ const FONT_WEIGHT_OPTIONS = [
   { value: 'font-extrabold', label: 'Extra Bold' },
 ];
 
+// ─── Default configs — only userLogin & affiliateLogin per tenant ─────────────
 const DEFAULT_CONFIG = {
   userLogin: {
     layout: 'split', transition: 'fade',
@@ -63,22 +59,12 @@ const DEFAULT_CONFIG = {
     options: { showBenefits: true, showBankStep: true },
     style: { overlayOpacity: 30, imageBlur: 0, cardBlur: 0, cardBg: '#ffffff', cardBgOpacity: 100, cardBorder: 'transparent', cardRadius: 'rounded-3xl', inputBorderColor: '#e5e7eb', inputRadius: 'rounded-xl', leftPanelGlass: false },
   },
-  adminLogin: {
-    layout: 'center', transition: 'zoom',
-    images: ['https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200'],
-    background: { type: 'image', imageUrl: '', gradient: 'linear-gradient(135deg,#1e293b,#0f172a)' },
-    branding: { logoUrl: '', logoText: 'Admin', showLogo: true },
-    text: { title: 'Admin Login', subtitle: 'Access the admin panel', titleColor: '#111827', subtitleColor: '#6b7280', titleSize: 'text-2xl', titleWeight: 'font-bold' },
-    button: { loginText: 'Sign In', registerText: '', color: '#16a34a', colorTo: '', gradient: false, radius: 'rounded-xl', textColor: '#ffffff', shadow: 'shadow-lg' },
-    options: { showForgotPassword: false },
-    style: { overlayOpacity: 50, imageBlur: 0, cardBlur: 8, cardBg: '#ffffff', cardBgOpacity: 95, cardBorder: 'transparent', cardRadius: 'rounded-2xl', inputBorderColor: '#e5e7eb', inputRadius: 'rounded-xl', leftPanelGlass: false },
-  },
 };
 
+// ─── Only 2 screens are per-tenant. Admin login lives in AdminTheme. ──────────
 const SCREENS = [
   { key: 'userLogin', label: 'User Login', icon: User },
   { key: 'affiliateLogin', label: 'Affiliate Signup', icon: Users },
-  { key: 'adminLogin', label: 'Admin Login', icon: Shield },
 ];
 
 const OPTION_LABELS: Record<string, string> = {
@@ -87,7 +73,6 @@ const OPTION_LABELS: Record<string, string> = {
   showAffiliateLink: '"Become an Affiliate" Link',
   showBenefits: 'Show Benefits Panel',
   showBankStep: 'Show Bank Details Step',
-  showForgotPassword: 'Show Forgot Password Link',
 };
 
 const EDITOR_TABS = [
@@ -173,7 +158,7 @@ const SliderRow = ({ label, value, min, max, onChange, unit = '' }: any) => (
   </div>
 );
 
-// ─── Image Slot — uploads to Firebase Storage + Assets collection ─────────────
+// ─── Image Slot ───────────────────────────────────────────────────────────────
 const ImageSlot = ({ index, url, onUrlChange, onRemove, storage, db, tenantId, screenKey }: any) => {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -192,21 +177,15 @@ const ImageSlot = ({ index, url, onUrlChange, onRemove, storage, db, tenantId, s
       const storagePath = `assets/${tenantId}/auth/${screenKey}_${index}_${fileName}`;
       const storageRef = ref(storage, storagePath);
       const task = uploadBytesResumable(storageRef, file);
-
       await new Promise<void>((resolve, reject) => {
         task.on('state_changed',
           snap => setProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
           reject,
           async () => {
             const downloadURL = await getDownloadURL(task.snapshot.ref);
-            // Save to Assets collection
             await addDoc(collection(db, 'Assets'), {
-              TenantId: tenantId,
-              URL: downloadURL,
-              Type: 'auth-background',
-              FileName: fileName,
-              StoragePath: storagePath,
-              Screen: screenKey,
+              TenantId: tenantId, URL: downloadURL, Type: 'auth-background',
+              FileName: fileName, StoragePath: storagePath, Screen: screenKey,
               CreatedAt: serverTimestamp(),
             });
             onUrlChange(downloadURL);
@@ -286,12 +265,16 @@ const ImagePanel = ({ images, transition, bgStyle, children, className, overlayO
   );
 };
 
-// ─── Mini Form Preview ────────────────────────────────────────────────────────
+// ─── Mini Form Preview — renders what the actual login shows ──────────────────
 const MiniForm = ({ cfg, isOverview = false }: any) => {
   const btnStyle = buildBtnStyle(cfg.button);
   const scale = isOverview ? 'text-[10px]' : 'text-xs';
   const inputH = isOverview ? 'h-5' : 'h-7';
   const gap = isOverview ? 'space-y-1.5' : 'space-y-2';
+  const inputStyle = {
+    borderColor: cfg.style?.inputBorderColor || '#e5e7eb',
+    borderRadius: cfg.style?.inputRadius ? undefined : undefined,
+  };
   return (
     <div className={gap}>
       {cfg.options?.showGoogle && (
@@ -302,24 +285,32 @@ const MiniForm = ({ cfg, isOverview = false }: any) => {
       )}
       <div>
         <p className={`${scale} text-gray-500 mb-0.5`}>Email</p>
-        <div className={`${inputH} border rounded bg-gray-50 px-2 flex items-center`} style={{ borderColor: cfg.style?.inputBorderColor || '#e5e7eb' }}>
+        <div className={`${inputH} border ${cfg.style?.inputRadius || 'rounded'} bg-gray-50 px-2 flex items-center`} style={{ borderColor: cfg.style?.inputBorderColor || '#e5e7eb' }}>
           <span className={`${scale} text-gray-400`}>you@example.com</span>
         </div>
       </div>
       <div>
         <p className={`${scale} text-gray-500 mb-0.5`}>Password</p>
-        <div className={`${inputH} border rounded bg-gray-50 px-2 flex items-center`} style={{ borderColor: cfg.style?.inputBorderColor || '#e5e7eb' }}>
+        <div className={`${inputH} border ${cfg.style?.inputRadius || 'rounded'} bg-gray-50 px-2 flex items-center`} style={{ borderColor: cfg.style?.inputBorderColor || '#e5e7eb' }}>
           <span className={`${scale} text-gray-400`}>••••••••</span>
         </div>
       </div>
       <div className={`${inputH} ${cfg.button?.radius || 'rounded-xl'} ${cfg.button?.shadow || ''} flex items-center justify-center font-semibold ${scale}`} style={btnStyle}>
         {cfg.button?.loginText || 'Sign In'}
       </div>
+      {cfg.options?.showRegister && !isOverview && (
+        <p className={`${scale} text-center text-gray-500`}>
+          Don't have an account? <span className="font-semibold" style={{ color: cfg.button?.color || '#16a34a' }}>{cfg.button?.registerText || 'Create Account'}</span>
+        </p>
+      )}
+      {cfg.options?.showAffiliateLink && !isOverview && (
+        <p className={`${scale} text-center`} style={{ color: cfg.button?.color || '#16a34a' }}>Become an Affiliate</p>
+      )}
     </div>
   );
 };
 
-// ─── Overview Card ────────────────────────────────────────────────────────────
+// ─── Overview Card — shows current live config ────────────────────────────────
 const OverviewCard = ({ screen, config, onEdit }: any) => {
   const cfg = config || DEFAULT_CONFIG[screen.key as keyof typeof DEFAULT_CONFIG];
   const bgStyle = getBgStyle(cfg.background);
@@ -336,15 +327,18 @@ const OverviewCard = ({ screen, config, onEdit }: any) => {
             overlayOpacity={cfg.style?.overlayOpacity ?? 30}>
             <div className="w-full h-full flex items-center justify-center p-4">
               <div className={`${cfg.style?.cardRadius || 'rounded-xl'} shadow-xl p-4 w-56`} style={cardStyle}>
-                {cfg.branding.showLogo && (
+                {cfg.branding?.showLogo && (
                   <div className="flex items-center gap-1.5 mb-2">
-                    <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: cfg.button.color }}>
-                      <span className="text-white text-[9px] font-bold">S</span>
-                    </div>
-                    <span className="font-bold text-[11px] text-gray-800 truncate">{cfg.branding.logoText}</span>
+                    {cfg.branding?.logoUrl
+                      ? <img src={cfg.branding.logoUrl} alt="" className="w-5 h-5 rounded object-cover" />
+                      : <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: cfg.button?.color || '#16a34a' }}>
+                          <span className="text-white text-[9px] font-bold">{(cfg.branding?.logoText || 'S')[0].toUpperCase()}</span>
+                        </div>
+                    }
+                    <span className="font-bold text-[11px] text-gray-800 truncate">{cfg.branding?.logoText}</span>
                   </div>
                 )}
-                <p className="font-bold text-xs truncate mb-0.5" style={{ color: cfg.text?.titleColor || '#111827' }}>{cfg.text.title}</p>
+                <p className="font-bold text-xs truncate mb-0.5" style={{ color: cfg.text?.titleColor || '#111827' }}>{cfg.text?.title}</p>
                 <MiniForm cfg={cfg} isOverview={true} />
               </div>
             </div>
@@ -355,21 +349,27 @@ const OverviewCard = ({ screen, config, onEdit }: any) => {
               overlayOpacity={cfg.style?.overlayOpacity ?? 30}>
               <div className="w-full h-full flex items-center justify-center px-4">
                 <div className="text-center text-white">
-                  {cfg.branding.showLogo && (
+                  {cfg.branding?.showLogo && (
                     <div className="flex items-center justify-center gap-1.5 mb-2">
-                      <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
-                        <Icon className="w-3 h-3 text-white" />
-                      </div>
-                      <span className="font-bold text-xs">{cfg.branding.logoText}</span>
+                      {cfg.branding?.logoUrl
+                        ? <img src={cfg.branding.logoUrl} alt="" className="w-6 h-6 rounded-full object-cover" />
+                        : <div className="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center">
+                            <Icon className="w-3 h-3 text-white" />
+                          </div>
+                      }
+                      <span className="font-bold text-xs">{cfg.branding?.logoText}</span>
                     </div>
                   )}
-                  <p className="text-xs font-semibold leading-tight">{cfg.text.title}</p>
+                  <p className="text-xs font-semibold leading-tight">{cfg.text?.title}</p>
+                  <p className="text-[10px] opacity-70 mt-0.5">{cfg.text?.subtitle}</p>
                 </div>
               </div>
             </ImagePanel>
-            <div className="w-1/2 flex items-center justify-center p-4" style={cardStyle}>
+            {/* Right card panel — mirrors actual login card */}
+            <div className="w-1/2 flex items-center justify-center p-4" style={buildCardStyle({ ...cfg.style, cardBgOpacity: 100, cardBg: cfg.style?.cardBg || '#ffffff' })}>
               <div className="w-full">
-                <p className="font-bold text-xs truncate mb-2" style={{ color: cfg.text?.titleColor || '#111827' }}>{cfg.text.title}</p>
+                <p className="font-bold text-xs truncate mb-0.5" style={{ color: cfg.text?.titleColor || '#111827' }}>{cfg.text?.title}</p>
+                <p className="text-[10px] mb-1.5" style={{ color: cfg.text?.subtitleColor || '#6b7280' }}>{cfg.text?.subtitle}</p>
                 <MiniForm cfg={cfg} isOverview={true} />
               </div>
             </div>
@@ -379,7 +379,7 @@ const OverviewCard = ({ screen, config, onEdit }: any) => {
       <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-slate-100">
         <div>
           <p className="font-semibold text-sm text-slate-800">{screen.label}</p>
-          <p className="text-xs text-slate-500">{cfg.layout} · {cfg.transition}</p>
+          <p className="text-xs text-slate-500">{cfg.layout} layout · {cfg.transition} transition · {(cfg.images || []).filter(Boolean).length} image(s)</p>
         </div>
         <Button size="sm" onClick={onEdit} className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1.5">
           <Pencil className="w-3.5 h-3.5" /> Edit
@@ -389,7 +389,7 @@ const OverviewCard = ({ screen, config, onEdit }: any) => {
   );
 };
 
-// ─── Full Preview ─────────────────────────────────────────────────────────────
+// ─── Full Preview — accurately reflects saved config ──────────────────────────
 const FullPreview = ({ config }: any) => {
   const [imgIdx, setImgIdx] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -400,12 +400,10 @@ const FullPreview = ({ config }: any) => {
   const cardStyle = buildCardStyle(config.style);
   const btnStyle = buildBtnStyle(config.button);
 
-  const goTo = (next: number) => setImgIdx(next);
-
   useEffect(() => {
     clearInterval(autoRef.current);
     if (isPlaying && images.length > 1)
-      autoRef.current = setInterval(() => goTo((imgIdx + 1) % images.length), 4000);
+      autoRef.current = setInterval(() => setImgIdx(p => (p + 1) % images.length), 4000);
     return () => clearInterval(autoRef.current);
   }, [isPlaying, imgIdx, images.length]);
 
@@ -416,6 +414,9 @@ const FullPreview = ({ config }: any) => {
   const BgLayers = () => (
     <>
       <div className={getTransClass(config.transition || 'fade', true)} style={bgFor(images[imgIdx] || '')} />
+      {config.style?.imageBlur > 0 && (
+        <div className="absolute inset-0" style={{ backdropFilter: `blur(${config.style.imageBlur}px)` }} />
+      )}
       <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${(config.style?.overlayOpacity ?? 30) / 100})` }} />
     </>
   );
@@ -427,56 +428,65 @@ const FullPreview = ({ config }: any) => {
           <Eye className="w-4 h-4" /> Live Preview
         </div>
         {images.length > 1 && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => goTo((imgIdx - 1 + images.length) % images.length)} className="h-8 w-8 p-0"><SkipBack className="h-4 w-4" /></Button>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-500">{imgIdx + 1} / {images.length}</span>
+            <Button size="sm" variant="outline" onClick={() => setImgIdx(p => (p - 1 + images.length) % images.length)} className="h-8 w-8 p-0"><SkipBack className="h-4 w-4" /></Button>
             <Button size="sm" variant="outline" onClick={() => setIsPlaying(!isPlaying)} className="h-8 w-8 p-0">{isPlaying ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}</Button>
-            <Button size="sm" variant="outline" onClick={() => goTo((imgIdx + 1) % images.length)} className="h-8 w-8 p-0"><SkipForward className="h-4 w-4" /></Button>
+            <Button size="sm" variant="outline" onClick={() => setImgIdx(p => (p + 1) % images.length)} className="h-8 w-8 p-0"><SkipForward className="h-4 w-4" /></Button>
           </div>
         )}
       </div>
-      <div className="relative w-full h-[380px] rounded-lg overflow-hidden shadow-lg border-2 border-slate-200 bg-slate-800">
+      <div className="relative w-full h-[400px] rounded-xl overflow-hidden shadow-lg border-2 border-slate-200 bg-slate-800">
         {isCenter ? (
           <>
             <BgLayers />
             <div className="absolute inset-0 flex items-center justify-center z-10 p-4">
               <div className={`${config.style?.cardRadius || 'rounded-2xl'} shadow-2xl p-6 w-full max-w-sm`} style={cardStyle}>
-                {config.branding.showLogo && (
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="w-7 h-7 rounded-xl flex items-center justify-center" style={{ background: config.button.color }}>
-                      <span style={{ color: config.button.textColor || '#fff' }} className="font-bold text-xs">S</span>
-                    </div>
-                    <span className="font-bold text-gray-800">{config.branding.logoText}</span>
+                {config.branding?.showLogo && (
+                  <div className="flex items-center gap-2 mb-4">
+                    {config.branding?.logoUrl
+                      ? <img src={config.branding.logoUrl} alt="" className="w-8 h-8 rounded-xl object-cover" />
+                      : <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: config.button?.color || '#16a34a' }}>
+                          <span style={{ color: config.button?.textColor || '#fff' }} className="font-bold text-sm">{(config.branding?.logoText || 'S')[0].toUpperCase()}</span>
+                        </div>
+                    }
+                    <span className="font-bold text-gray-800">{config.branding?.logoText}</span>
                   </div>
                 )}
-                <h2 className={`${config.text?.titleSize || 'text-xl'} ${config.text?.titleWeight || 'font-bold'} mb-0.5`} style={{ color: config.text?.titleColor || '#111827' }}>{config.text.title}</h2>
-                <p className="text-xs mb-3" style={{ color: config.text?.subtitleColor || '#6b7280' }}>{config.text.subtitle}</p>
+                <h2 className={`${config.text?.titleSize || 'text-xl'} ${config.text?.titleWeight || 'font-bold'} mb-0.5`} style={{ color: config.text?.titleColor || '#111827' }}>{config.text?.title}</h2>
+                <p className="text-xs mb-4" style={{ color: config.text?.subtitleColor || '#6b7280' }}>{config.text?.subtitle}</p>
                 <MiniForm cfg={config} isOverview={false} />
               </div>
             </div>
           </>
         ) : (
           <div className="w-full h-full flex">
+            {/* Left image panel */}
             <div className="w-1/2 h-full relative overflow-hidden">
               <BgLayers />
               <div className="absolute inset-0 flex items-center justify-center z-10 p-8">
-                <div className="text-white">
-                  {config.branding.showLogo && (
-                    <div className="flex items-center gap-2 mb-4">
-                      <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                        <span className="font-bold text-sm">S</span>
-                      </div>
-                      <span className="font-bold">{config.branding.logoText}</span>
+                <div className="text-white text-center">
+                  {config.branding?.showLogo && (
+                    <div className="flex items-center justify-center gap-2 mb-4">
+                      {config.branding?.logoUrl
+                        ? <img src={config.branding.logoUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+                        : <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
+                            <span className="font-bold text-sm">{(config.branding?.logoText || 'S')[0].toUpperCase()}</span>
+                          </div>
+                      }
+                      <span className="font-bold">{config.branding?.logoText}</span>
                     </div>
                   )}
-                  <h1 className="text-lg font-bold mb-2 leading-tight">{config.text.title}</h1>
-                  <p className="text-sm opacity-80">{config.text.subtitle}</p>
+                  <h1 className={`${config.text?.titleSize || 'text-lg'} ${config.text?.titleWeight || 'font-bold'} mb-2 leading-tight`}>{config.text?.title}</h1>
+                  <p className="text-sm opacity-80">{config.text?.subtitle}</p>
                 </div>
               </div>
             </div>
+            {/* Right form card */}
             <div className="w-1/2 flex items-center justify-center p-6" style={cardStyle}>
               <div className="w-full">
-                <h2 className={`${config.text?.titleSize || 'text-lg'} ${config.text?.titleWeight || 'font-bold'} mb-0.5`} style={{ color: config.text?.titleColor || '#111827' }}>{config.text.title}</h2>
-                <p className="text-xs mb-3" style={{ color: config.text?.subtitleColor || '#6b7280' }}>{config.text.subtitle}</p>
+                <h2 className={`${config.text?.titleSize || 'text-lg'} ${config.text?.titleWeight || 'font-bold'} mb-0.5`} style={{ color: config.text?.titleColor || '#111827' }}>{config.text?.title}</h2>
+                <p className="text-xs mb-4" style={{ color: config.text?.subtitleColor || '#6b7280' }}>{config.text?.subtitle}</p>
                 <MiniForm cfg={config} isOverview={false} />
               </div>
             </div>
@@ -502,7 +512,7 @@ export default function AuthManager() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // ── Load from Sites/{tenantId} — AuthCustomization field ─────────────────
+  // ── Load from Sites/{tenantId} — only userLogin & affiliateLogin ──────────
   useEffect(() => {
     if (!db || !tenantId) { setLoading(false); return; }
     const load = async () => {
@@ -513,9 +523,24 @@ export default function AuthManager() {
           const saved = snap.data()?.AuthCustomization;
           if (saved) {
             setConfigs(prev => ({
-              userLogin:      { ...prev.userLogin,      ...(saved.userLogin      || {}), style: { ...prev.userLogin.style,      ...(saved.userLogin?.style      || {}) }, button: { ...prev.userLogin.button,      ...(saved.userLogin?.button      || {}) }, text: { ...prev.userLogin.text,      ...(saved.userLogin?.text      || {}) } },
-              affiliateLogin: { ...prev.affiliateLogin, ...(saved.affiliateLogin || {}), style: { ...prev.affiliateLogin.style, ...(saved.affiliateLogin?.style || {}) }, button: { ...prev.affiliateLogin.button, ...(saved.affiliateLogin?.button || {}) }, text: { ...prev.affiliateLogin.text, ...(saved.affiliateLogin?.text || {}) } },
-              adminLogin:     { ...prev.adminLogin,     ...(saved.adminLogin     || {}), style: { ...prev.adminLogin.style,     ...(saved.adminLogin?.style     || {}) }, button: { ...prev.adminLogin.button,     ...(saved.adminLogin?.button     || {}) }, text: { ...prev.adminLogin.text,     ...(saved.adminLogin?.text     || {}) } },
+              userLogin: {
+                ...prev.userLogin,
+                ...(saved.userLogin || {}),
+                style: { ...prev.userLogin.style, ...(saved.userLogin?.style || {}) },
+                button: { ...prev.userLogin.button, ...(saved.userLogin?.button || {}) },
+                text: { ...prev.userLogin.text, ...(saved.userLogin?.text || {}) },
+                branding: { ...prev.userLogin.branding, ...(saved.userLogin?.branding || {}) },
+                options: { ...prev.userLogin.options, ...(saved.userLogin?.options || {}) },
+              },
+              affiliateLogin: {
+                ...prev.affiliateLogin,
+                ...(saved.affiliateLogin || {}),
+                style: { ...prev.affiliateLogin.style, ...(saved.affiliateLogin?.style || {}) },
+                button: { ...prev.affiliateLogin.button, ...(saved.affiliateLogin?.button || {}) },
+                text: { ...prev.affiliateLogin.text, ...(saved.affiliateLogin?.text || {}) },
+                branding: { ...prev.affiliateLogin.branding, ...(saved.affiliateLogin?.branding || {}) },
+                options: { ...prev.affiliateLogin.options, ...(saved.affiliateLogin?.options || {}) },
+              },
             }));
           }
         }
@@ -529,7 +554,8 @@ export default function AuthManager() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db, tenantId]);
 
-  // ── Save to Sites/{tenantId} — merge AuthCustomization field ─────────────
+  // ── Save to Sites/{tenantId} — only userLogin & affiliateLogin ────────────
+  // adminLogin is NOT saved here — it lives in AdminTheme (StoreConfigs/StoreConfig001)
   const handleSave = async () => {
     if (!db || !tenantId) {
       toast({ title: 'No active tenant', variant: 'destructive' });
@@ -538,7 +564,11 @@ export default function AuthManager() {
     setSaving(true);
     try {
       await setDoc(doc(db, 'Sites', tenantId), {
-        AuthCustomization: configs,
+        AuthCustomization: {
+          userLogin: configs.userLogin,
+          affiliateLogin: configs.affiliateLogin,
+          // adminLogin intentionally excluded — managed in Admin Theme
+        },
         TenantId: tenantId,
         UpdatedAt: new Date(),
       }, { merge: true });
@@ -563,7 +593,6 @@ export default function AuthManager() {
 
   const cfg = configs[activeScreen as keyof typeof configs];
 
-  // ── Guards ────────────────────────────────────────────────────────────────
   if (!tenantId) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
@@ -622,10 +651,22 @@ export default function AuthManager() {
         </div>
       </div>
 
+      {/* Info banner — explains admin login is elsewhere */}
+      <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 flex items-start gap-3">
+        <AlertCircle className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
+        <div>
+          <p className="text-xs font-semibold text-blue-700">Per-tenant screens only</p>
+          <p className="text-xs text-blue-600 mt-0.5">
+            This page controls <strong>User Login</strong> and <strong>Affiliate Signup</strong> — one config per tenant store.
+            The <strong>Admin Login</strong> is platform-wide and is configured under <strong>Admin Theme</strong>.
+          </p>
+        </div>
+      </div>
+
       {/* Overview */}
       {viewMode === 'overview' && (
         <div className="space-y-4">
-          <p className="text-slate-500 text-sm">Click <strong>Edit</strong> to customise each login screen.</p>
+          <p className="text-slate-500 text-sm">Click <strong>Edit</strong> to customise each login screen for <strong>{activeTenant?.Name}</strong>.</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {SCREENS.map(screen => (
               <OverviewCard key={screen.key} screen={screen} config={configs[screen.key as keyof typeof configs]}
@@ -642,7 +683,7 @@ export default function AuthManager() {
           <Card style={{ backgroundColor: '#f0f4f8' }}>
             <CardHeader><CardTitle className="text-lg">Select Screen</CardTitle></CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {SCREENS.map(screen => {
                   const Icon = screen.icon;
                   return (
@@ -672,7 +713,7 @@ export default function AuthManager() {
             </CardContent>
           </Card>
 
-          {/* Preview */}
+          {/* Live Preview — reflects current unsaved state */}
           <Card style={{ backgroundColor: '#f0f4f8' }}>
             <CardContent className="pt-5"><FullPreview config={cfg} /></CardContent>
           </Card>
@@ -697,7 +738,7 @@ export default function AuthManager() {
               {activeTab === 'content' && (
                 <div className="space-y-6">
                   <div className="space-y-2">
-                    <Label className="flex items-center gap-1.5 text-sm font-medium"><Layout className="w-3.5 h-3.5 text-indigo-500" />Layout</Label>
+                    <Label className="flex items-center gap-1.5 text-sm font-medium"><Layout className="w-3.5 h-3.5" style={{ color: "var(--admin-primary)" }} />Layout</Label>
                     <div className="flex gap-3">
                       {['split', 'center'].map(opt => (
                         <button key={opt} onClick={() => set('layout', opt)}
@@ -719,9 +760,9 @@ export default function AuthManager() {
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><Type className="w-3.5 h-3.5 text-violet-500" />Text</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5"><Label className="text-xs text-slate-500">Login Title</Label>
-                        <Input value={cfg.text.title} onChange={e => set('text.title', e.target.value)} className="bg-gray-50" /></div>
+                        <Input value={cfg.text?.title || ''} onChange={e => set('text.title', e.target.value)} className="bg-gray-50" /></div>
                       <div className="space-y-1.5"><Label className="text-xs text-slate-500">Login Subtitle</Label>
-                        <Input value={cfg.text.subtitle} onChange={e => set('text.subtitle', e.target.value)} className="bg-gray-50" /></div>
+                        <Input value={cfg.text?.subtitle || ''} onChange={e => set('text.subtitle', e.target.value)} className="bg-gray-50" /></div>
                     </div>
                     {activeScreen === 'userLogin' && (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -735,19 +776,25 @@ export default function AuthManager() {
 
                   <div className="space-y-3">
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><Layers className="w-3.5 h-3.5 text-amber-500" />Branding</Label>
-                    <Toggle checked={cfg.branding.showLogo} onChange={(v: boolean) => set('branding.showLogo', v)} label="Show Logo / Brand Name" />
+                    <Toggle checked={cfg.branding?.showLogo} onChange={(v: boolean) => set('branding.showLogo', v)} label="Show Logo / Brand Name" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5"><Label className="text-xs text-slate-500">Brand Name</Label>
-                        <Input value={cfg.branding.logoText} onChange={e => set('branding.logoText', e.target.value)} className="bg-gray-50" /></div>
+                        <Input value={cfg.branding?.logoText || ''} onChange={e => set('branding.logoText', e.target.value)} className="bg-gray-50" /></div>
                       <div className="space-y-1.5"><Label className="text-xs text-slate-500">Logo URL</Label>
-                        <Input value={cfg.branding.logoUrl} onChange={e => set('branding.logoUrl', e.target.value)} placeholder="https://..." className="bg-gray-50" /></div>
+                        <Input value={cfg.branding?.logoUrl || ''} onChange={e => set('branding.logoUrl', e.target.value)} placeholder="https://..." className="bg-gray-50" /></div>
                     </div>
+                    {cfg.branding?.logoUrl && (
+                      <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-lg">
+                        <img src={cfg.branding.logoUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        <span className="text-xs text-slate-500">Logo preview</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-1">
                     <Label className="flex items-center gap-1.5 text-sm font-medium mb-2"><ToggleRight className="w-3.5 h-3.5 text-teal-500" />Options</Label>
                     <div className="divide-y divide-gray-100">
-                      {Object.entries(cfg.options).map(([key, val]) => (
+                      {Object.entries(cfg.options || {}).map(([key, val]) => (
                         <Toggle key={key} checked={!!val} onChange={(v: boolean) => set(`options.${key}`, v)} label={OPTION_LABELS[key] || key} />
                       ))}
                     </div>
@@ -760,26 +807,26 @@ export default function AuthManager() {
                 <div className="space-y-6">
                   <div className="space-y-3">
                     <Label className="flex items-center gap-1.5 text-sm font-medium"><Palette className="w-3.5 h-3.5 text-green-500" />Button Color</Label>
-                    <Toggle checked={!!cfg.button.gradient} onChange={(v: boolean) => set('button.gradient', v)} label="Use gradient (2 colors)" />
+                    <Toggle checked={!!cfg.button?.gradient} onChange={(v: boolean) => set('button.gradient', v)} label="Use gradient (2 colors)" />
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <ColorRow label={cfg.button.gradient ? 'Color From' : 'Button Color'} value={cfg.button.color} onChange={(v: string) => set('button.color', v)} />
-                      {cfg.button.gradient && (
-                        <ColorRow label="Color To" value={cfg.button.colorTo || '#0d9488'} onChange={(v: string) => set('button.colorTo', v)} />
+                      <ColorRow label={cfg.button?.gradient ? 'Color From' : 'Button Color'} value={cfg.button?.color} onChange={(v: string) => set('button.color', v)} />
+                      {cfg.button?.gradient && (
+                        <ColorRow label="Color To" value={cfg.button?.colorTo || '#0d9488'} onChange={(v: string) => set('button.colorTo', v)} />
                       )}
                     </div>
-                    <div className={`h-10 ${cfg.button.radius || 'rounded-xl'} ${cfg.button.shadow || 'shadow-lg'} flex items-center justify-center text-sm font-semibold`}
+                    <div className={`h-10 ${cfg.button?.radius || 'rounded-xl'} ${cfg.button?.shadow || 'shadow-lg'} flex items-center justify-center text-sm font-semibold`}
                       style={buildBtnStyle(cfg.button)}>
-                      {cfg.button.loginText || 'Preview'}
+                      {cfg.button?.loginText || 'Preview'}
                     </div>
                   </div>
-                  <ColorRow label="Button Text Color" value={cfg.button.textColor || '#ffffff'} onChange={(v: string) => set('button.textColor', v)} />
+                  <ColorRow label="Button Text Color" value={cfg.button?.textColor || '#ffffff'} onChange={(v: string) => set('button.textColor', v)} />
                   <div className="space-y-1.5">
                     <Label className="text-xs text-slate-500">Button Shape</Label>
                     <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
                       {RADIUS_OPTIONS.map(r => (
                         <button key={r.value} onClick={() => set('button.radius', r.value)}
                           className={`py-2 text-xs font-medium border-2 transition-all ${r.value}
-                            ${cfg.button.radius === r.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500'}`}>
+                            ${cfg.button?.radius === r.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 text-gray-500'}`}>
                           {r.label}
                         </button>
                       ))}
@@ -789,10 +836,10 @@ export default function AuthManager() {
                     <Label className="text-sm font-medium text-slate-700">Button Labels</Label>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5"><Label className="text-xs text-slate-500">Login Button</Label>
-                        <Input value={cfg.button.loginText} onChange={e => set('button.loginText', e.target.value)} /></div>
+                        <Input value={cfg.button?.loginText || ''} onChange={e => set('button.loginText', e.target.value)} /></div>
                       {activeScreen === 'userLogin' && (
                         <div className="space-y-1.5"><Label className="text-xs text-slate-500">Register Button</Label>
-                          <Input value={cfg.button.registerText || ''} onChange={e => set('button.registerText', e.target.value)} /></div>
+                          <Input value={cfg.button?.registerText || ''} onChange={e => set('button.registerText', e.target.value)} /></div>
                       )}
                     </div>
                   </div>

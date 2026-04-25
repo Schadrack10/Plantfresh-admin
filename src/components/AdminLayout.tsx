@@ -2,7 +2,7 @@ import { useEffect, useState, useContext, useRef } from "react";
 import {
   LayoutDashboard, User2Icon, Package, FileText,
   LogOut, Handshake, Layers, ChevronDown, Check,
-  Globe, Image, Palette,
+  Globe, Image, Palette, ShoppingCart, Settings,
 } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { doc, onSnapshot } from "firebase/firestore";
@@ -15,9 +15,12 @@ import AppContext from "../context/AppContext";
 import { Tenant } from "@/types";
 
 const ADMIN_THEME_DEFAULTS = {
-  primaryColor:   "#4f46e5",
-  secondaryColor: "#7c3aed",
-  navbarBg:       "#1e1b4b",
+  primaryColor:    "#4f46e5",
+  secondaryColor:  "#7c3aed",
+  accentColor:     "#22c55e",
+  navbarBg:        "#1e1b4b",
+  buttonColor:     "#4f46e5",
+  buttonTextColor: "#ffffff",
 };
 
 const ALL_MENU_ITEMS = [
@@ -25,10 +28,12 @@ const ALL_MENU_ITEMS = [
   { title: "Tenants",        url: "/tenants",        icon: Layers,          superAdminOnly: true  },
   { title: "Templates",      url: "/templates",      icon: Image,           superAdminOnly: true  },
   { title: "Users",          url: "/users",          icon: User2Icon,       superAdminOnly: false },
+  { title: "Orders",         url: "/orders",         icon: ShoppingCart,    superAdminOnly: false },
   { title: "Products",       url: "/products",       icon: Package,         superAdminOnly: false },
   { title: "Blog Posts",     url: "/blog",           icon: FileText,        superAdminOnly: false },
   { title: "Affiliation",    url: "/affiliation",    icon: Handshake,       superAdminOnly: false },
   { title: "Platform Theme", url: "/admin-theme",    icon: Palette,         superAdminOnly: true  },
+  { title: "Profile",        url: "/profile",        icon: Settings,        superAdminOnly: false },
 ];
 
 export function AdminLayout() {
@@ -51,7 +56,7 @@ export function AdminLayout() {
 
   const menuItems = ALL_MENU_ITEMS.filter((item) => !item.superAdminOnly || isSuperAdmin);
 
-  // ── Listen to AdminTheme from StoreConfigs/StoreConfig001 ONLY ────────────
+  // ── Listen to AdminTheme from StoreConfigs/StoreConfig001 ────────────────
   useEffect(() => {
     if (!db) return;
     const unsub = onSnapshot(
@@ -59,11 +64,14 @@ export function AdminLayout() {
       (snap) => {
         if (!snap.exists()) return;
         const adminT = snap.data()?.AdminTheme;
-        if (adminT?.primaryColor || adminT?.navbarBg) {
+        if (adminT) {
           setAdminTheme({
-            primaryColor:   adminT.primaryColor   || ADMIN_THEME_DEFAULTS.primaryColor,
-            secondaryColor: adminT.secondaryColor || ADMIN_THEME_DEFAULTS.secondaryColor,
-            navbarBg:       adminT.navbarBg       || ADMIN_THEME_DEFAULTS.navbarBg,
+            primaryColor:    adminT.primaryColor    || ADMIN_THEME_DEFAULTS.primaryColor,
+            secondaryColor:  adminT.secondaryColor  || ADMIN_THEME_DEFAULTS.secondaryColor,
+            accentColor:     adminT.accentColor     || ADMIN_THEME_DEFAULTS.accentColor,
+            navbarBg:        adminT.navbarBg        || ADMIN_THEME_DEFAULTS.navbarBg,
+            buttonColor:     adminT.buttonColor     || adminT.primaryColor || ADMIN_THEME_DEFAULTS.buttonColor,
+            buttonTextColor: adminT.buttonTextColor || ADMIN_THEME_DEFAULTS.buttonTextColor,
           });
         }
         const name =
@@ -79,6 +87,7 @@ export function AdminLayout() {
       (err) => console.error("AdminTheme listener error:", err)
     );
     return () => unsub();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [db]);
 
   // ── Close dropdown on outside click ──────────────────────────────────────
@@ -109,9 +118,30 @@ export function AdminLayout() {
   const userInitial   = (currentUser?.email?.[0] || "?").toUpperCase();
   const tenantInitial = (activeTenant?.Name?.[0]  || "?").toUpperCase();
 
+  // ── CSS variables injected at the root so every admin page can use them ──
+  // Usage in any page:
+  //   style={{ backgroundColor: "var(--admin-btn-bg)", color: "var(--admin-btn-text)" }}
+  //   style={{ color: "var(--admin-primary)" }}
+  //   style={{ borderColor: "var(--admin-primary)" }}
+  const cssVars = {
+    "--admin-primary":    adminTheme.primaryColor,
+    "--admin-secondary":  adminTheme.secondaryColor,
+    "--admin-accent":     adminTheme.accentColor,
+    "--admin-navbar":     adminTheme.navbarBg,
+    "--admin-btn-bg":     adminTheme.buttonColor,
+    "--admin-btn-text":   adminTheme.buttonTextColor,
+    // Soft tints — useful for badges, hover backgrounds, etc.
+    "--admin-primary-10": `${adminTheme.primaryColor}1a`,
+    "--admin-primary-20": `${adminTheme.primaryColor}33`,
+    "--admin-accent-10":  `${adminTheme.accentColor}1a`,
+    "--admin-accent-20":  `${adminTheme.accentColor}33`,
+    "--admin-btn-bg-10":  `${adminTheme.buttonColor}1a`,
+  } as React.CSSProperties;
+
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      {/* CSS variables scoped to the entire admin shell */}
+      <div className="min-h-screen flex w-full" style={cssVars}>
         <Sidebar>
           <SidebarContent style={{ backgroundColor: sidebarBg }} className="flex flex-col h-full">
 

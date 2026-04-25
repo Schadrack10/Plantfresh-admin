@@ -151,8 +151,8 @@ const SECTION_TYPES = [
     type: "FAQ",
     label: "FAQ",
     icon: HelpCircle,
-    color: "bg-indigo-50 border-indigo-200 text-indigo-700",
-    iconBg: "bg-indigo-100",
+    color: "border-indigo-200 text-indigo-700",
+    iconBg: "",
     description: "Accordion-style frequently asked questions section",
     defaultContent: {
       heading: "Frequently Asked Questions",
@@ -322,8 +322,9 @@ const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
           type="button"
           onClick={() => setTab("upload")}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-            tab === "upload" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+            tab === "upload" ? "text-white" : "bg-white text-slate-600 hover:bg-slate-50"
           }`}
+          style={tab === "upload" ? { backgroundColor: "var(--admin-btn-bg)", color: "var(--admin-btn-text)" } : {}}
         >
           <Upload className="w-3 h-3" /> Upload file
         </button>
@@ -331,8 +332,9 @@ const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
           type="button"
           onClick={() => setTab("url")}
           className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-            tab === "url" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+            tab === "url" ? "text-white" : "bg-white text-slate-600 hover:bg-slate-50"
           }`}
+          style={tab === "url" ? { backgroundColor: "var(--admin-btn-bg)", color: "var(--admin-btn-text)" } : {}}
         >
           <LinkIcon className="w-3 h-3" /> URL
         </button>
@@ -355,19 +357,21 @@ const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
             onClick={() => !uploading && fileRef.current?.click()}
             className={`relative border-2 border-dashed rounded-xl transition-colors cursor-pointer
               ${uploading
-                ? "border-indigo-300 bg-indigo-50 cursor-not-allowed"
+                ? "cursor-not-allowed"
                 : "border-slate-200 hover:border-indigo-300 hover:bg-slate-50"
               }`}
+              style={uploading ? { borderColor: "var(--admin-primary-30)", backgroundColor: "var(--admin-primary-20)" } : {}}
+          >
           >
             {uploading ? (
               // Progress UI — same pattern as Features.tsx
               <div className="p-8 text-center space-y-2">
-                <Loader2 className="w-8 h-8 animate-spin text-indigo-500 mx-auto" />
-                <p className="text-sm text-indigo-600 font-medium">Uploading… {progress}%</p>
+                <Loader2 className="w-8 h-8 animate-spin mx-auto" style={{ color: "var(--admin-primary)" }} />
+                <p className="text-sm font-medium" style={{ color: "var(--admin-primary)" }}>Uploading… {progress}%</p>
                 <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
                   <div
-                    className="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                    style={{ width: `${progress}%` }}
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{ width: `${progress}%`, backgroundColor: "var(--admin-primary)" }}
                   />
                 </div>
               </div>
@@ -730,7 +734,7 @@ const TemplateCard = ({
                   return (
                     <div key={s.Id || i} className="flex items-center gap-2.5 px-3 py-2.5 bg-slate-50">
                       <span className="text-[10px] font-mono text-slate-400 w-4 flex-shrink-0">{i + 1}</span>
-                      <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${def?.iconBg || "bg-slate-200"}`}>
+                      <div className={`w-5 h-5 rounded flex items-center justify-center flex-shrink-0 ${def?.iconBg || "bg-slate-200"}`} style={def?.iconBg ? {} : { backgroundColor: "var(--admin-primary-20)" }}>
                         <Icon className="w-3 h-3" />
                       </div>
                       <span className="text-xs text-slate-700 font-medium">{def?.label || sectionType}</span>

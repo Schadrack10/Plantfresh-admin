@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useContext } from "react";
+import React, { useState, useEffect, useRef, useMemo, useContext } from "react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,28 +7,79 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  collection, getDocs, updateDoc, deleteDoc, doc, query, where,
+  collection, getDocs, updateDoc, deleteDoc, doc, query, where, setDoc,
+  type Firestore,
 } from "firebase/firestore";
+import { getAuth, createUserWithEmailAndPassword } from "firebase/auth";
 import { useToast } from "@/hooks/use-toast";
 import AppContext from "../context/AppContext";
 import { AlertCircle } from "lucide-react";
 
 type UserCategory = "all" | "admins" | "affiliates" | "users" | "banned";
 
-const formatDate = (val: any): string => {
+type UserFormValues = {
+  Name: string;
+  Email: string;
+  Phone: string;
+  Country: string;
+  Address: string;
+  City: string;
+  PostalCode: string;
+  IsAdmin: boolean;
+  IsAffiliate: boolean;
+  IsSuperAdmin: boolean;
+};
+
+type CreateUserFormValues = UserFormValues & {
+  Password: string;
+};
+
+type UserRecord = {
+  id?: string;
+  UserID: string;
+  Email: string;
+  TenantId: string;
+  TenantID?: string;
+  Name?: string;
+  Phone?: string;
+  Country?: string;
+  Address?: string;
+  City?: string;
+  PostalCode?: string;
+  IsAdmin: boolean;
+  IsSuperAdmin: boolean;
+  IsAffiliate: boolean;
+  IsBanned?: boolean;
+  AffiliateId?: string;
+  BanReason?: string | null;
+  BannedAt?: string | null;
+  CreatedAt?: string | { seconds: number } | { toDate: () => Date };
+  Role?: string;
+};
+
+type AppContextType = {
+  db: Firestore | null;
+  globalState: {
+    activeTenant?: { Id?: string; Name?: string } | null;
+    [key: string]: unknown;
+  };
+};
+
+const formatDate = (val: unknown): string => {
   if (!val) return "-";
-  if (val?.toDate) return val.toDate().toLocaleString();
-  if (val?.seconds) return new Date(val.seconds * 1000).toLocaleString();
+  const maybeTimestamp = val as { toDate?: () => Date; seconds?: number };
+  if (maybeTimestamp.toDate) return maybeTimestamp.toDate().toLocaleString();
+  if (typeof maybeTimestamp.seconds === "number") return new Date(maybeTimestamp.seconds * 1000).toLocaleString();
   if (typeof val === "string" || typeof val === "number")
     return new Date(val).toLocaleString();
   return "-";
 };
 
 export default function Users() {
-  const { db, globalState } = useContext(AppContext);
+  const { db, globalState } = useContext(AppContext as React.Context<AppContextType>);
   const { toast } = useToast();
 
-  const activeTenant = (globalState as any)?.activeTenant;
+  const activeTenant = globalState?.activeTenant;
   const tenantId = activeTenant?.Id;
 
   // Cache key is per-tenant so switching tenants always loads fresh data
@@ -39,24 +90,44 @@ export default function Users() {
   const hasFetched = useRef(false);
   const prevTenantId = useRef<string | undefined>(undefined);
 
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeCategory, setActiveCategory] = useState<UserCategory>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [openEdit, setOpenEdit] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<any>(null);
-  const [openBan, setOpenBan] = useState(false);
-  const [banTarget, setBanTarget] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<UserRecord | null>(null);
+  const [openUnbanConfirm, setOpenUnbanConfirm] = useState(false);
+  const [unbanTarget, setUnbanTarget] = useState<UserRecord | null>(null);
+  const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<UserRecord | null>(null);
+
+  const [banTarget, setBanTarget] = useState<UserRecord | null>(null);
   const [banReason, setBanReason] = useState("");
+  const [openBan, setOpenBan] = useState(false);
   const [banLoading, setBanLoading] = useState(false);
 
-  const [editValues, setEditValues] = useState({
+  const [openCreate, setOpenCreate] = useState(false);
+  const [createValues, setCreateValues] = useState<CreateUserFormValues>({
+    Name: "",
+    Email: "",
+    Phone: "",
+    Country: "",
+    Address: "",
+    City: "",
+    PostalCode: "",
+    Password: "",
+    IsAdmin: false,
+    IsAffiliate: false,
+    IsSuperAdmin: false,
+  });
+
+  const [editValues, setEditValues] = useState<UserFormValues & { CreatedAt: UserRecord["CreatedAt"] | null }>({
     Name: "", Email: "", Country: "", Phone: "",
     Address: "", City: "", PostalCode: "",
     IsAdmin: false, IsAffiliate: false,
-    IsSuperAdmin: false, Role: "user",
-    CreatedAt: null as any,
+    IsSuperAdmin: false,
+    CreatedAt: null,
   });
 
   // ── Re-fetch when tenant switches ────────────────────────────────────────
@@ -73,7 +144,11 @@ export default function Users() {
 
     const cached = localStorage.getItem(CACHE_KEY);
     if (cached) {
-      try { setUsers(JSON.parse(cached)); } catch {}
+      try {
+        setUsers(JSON.parse(cached) as UserRecord[]);
+      } catch {
+        // Ignore invalid cached data
+      }
     }
     const fetchedAt = localStorage.getItem(CACHE_TS_KEY);
     const isStale = !fetchedAt || Date.now() - parseInt(fetchedAt, 10) > CACHE_TTL_MS;
@@ -89,14 +164,13 @@ export default function Users() {
       // Scope to this tenant only
       const q = query(collection(db, "Users"), where("TenantId", "==", tenantId));
       const snap = await getDocs(q);
-      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() })) as UserRecord[];
       localStorage.setItem(CACHE_KEY, JSON.stringify(list));
       localStorage.setItem(CACHE_TS_KEY, String(Date.now()));
       setUsers(list);
       if (!silent)
         toast({ title: "Users refreshed", description: `Loaded ${list.length} users for ${activeTenant?.Name}` });
     } catch (err) {
-      console.error(err);
       if (!silent) toast({ title: "Error loading users", variant: "destructive" });
     } finally {
       if (!silent) setLoading(false);
@@ -113,7 +187,7 @@ export default function Users() {
       case "admins":     return sortedUsers.filter((u) => u.IsAdmin || u.IsSuperAdmin || u.Role === "Admin" || u.Role === "SuperAdmin");
       case "affiliates": return sortedUsers.filter((u) => u.IsAffiliate);
       case "banned":     return sortedUsers.filter((u) => u.IsBanned);
-      case "users":      return sortedUsers.filter((u) => !u.IsAdmin && !u.IsAffiliate && !u.IsSuperAdmin);
+      case "users":      return sortedUsers.filter((u) => !u.IsAdmin && !u.IsAffiliate && !u.IsSuperAdmin && u.Role !== "Admin" && u.Role !== "SuperAdmin");
       default:           return sortedUsers;
     }
   }, [sortedUsers, activeCategory]);
@@ -131,8 +205,17 @@ export default function Users() {
     all:        sortedUsers.length,
     admins:     sortedUsers.filter((u) => u.IsAdmin || u.IsSuperAdmin || u.Role === "Admin" || u.Role === "SuperAdmin").length,
     affiliates: sortedUsers.filter((u) => u.IsAffiliate).length,
-    users:      sortedUsers.filter((u) => !u.IsAdmin && !u.IsAffiliate && !u.IsSuperAdmin).length,
+    users:      sortedUsers.filter((u) => !u.IsAdmin && !u.IsAffiliate && !u.IsSuperAdmin && u.Role !== "Admin" && u.Role !== "SuperAdmin").length,
     banned:     sortedUsers.filter((u) => u.IsBanned).length,
+  };
+
+  const generateUserId = () => {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let id = "";
+    for (let i = 0; i < 6; i += 1) {
+      id += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return id;
   };
 
   const generateAffiliateId = () => {
@@ -143,7 +226,7 @@ export default function Users() {
   };
 
   // ── Ban / Unban ──────────────────────────────────────────────────────────
-  const handleOpenBan = (user: any) => { setBanTarget(user); setBanReason(""); setOpenBan(true); };
+  const handleOpenBan = (user: UserRecord) => { setBanTarget(user); setBanReason(""); setOpenBan(true); };
 
   const handleBanUser = async () => {
     if (!banReason.trim()) {
@@ -166,22 +249,29 @@ export default function Users() {
     }
   };
 
-  const handleUnbanUser = async (user: any) => {
-    if (!confirm(`Unban ${user.Name || user.Email}?`)) return;
+  const handleOpenUnbanConfirm = (user: UserRecord) => {
+    setUnbanTarget(user);
+    setOpenUnbanConfirm(true);
+  };
+
+  const handleUnbanUser = async () => {
+    if (!unbanTarget) return;
     try {
       const updateData = { IsBanned: false, BanReason: null, BannedAt: null };
-      await updateDoc(doc(db, "Users", user.id), updateData);
-      const updated = users.map((u) => u.id === user.id ? { ...u, ...updateData } : u);
+      await updateDoc(doc(db, "Users", unbanTarget.id), updateData);
+      const updated = users.map((u) => u.id === unbanTarget.id ? { ...u, ...updateData } : u);
       setUsers(updated);
       localStorage.setItem(CACHE_KEY, JSON.stringify(updated));
       toast({ title: "User unbanned" });
+      setOpenUnbanConfirm(false);
+      setUnbanTarget(null);
     } catch (err) {
       toast({ title: "Unban failed", variant: "destructive" });
     }
   };
 
   // ── Edit ─────────────────────────────────────────────────────────────────
-  const handleOpenEdit = (user: any) => {
+  const handleOpenEdit = (user: UserRecord) => {
     setSelectedUser(user);
     setEditValues({
       Name:        user.Name        || "",
@@ -194,8 +284,6 @@ export default function Users() {
       IsAdmin:     user.IsAdmin     || false,
       IsAffiliate: user.IsAffiliate || false,
       IsSuperAdmin: user.IsSuperAdmin || false,
-      // Normalise Role — derive from boolean flags if Role string is missing
-      Role: user.Role || (user.IsSuperAdmin ? "SuperAdmin" : user.IsAdmin ? "Admin" : "user"),
       CreatedAt:   user.CreatedAt   ?? null,
     });
     setOpenEdit(true);
@@ -213,12 +301,12 @@ export default function Users() {
         ? "Admin"
         : "user";
 
-      const updateData: any = {
+      const updateData: Partial<UserRecord> = {
         ...writableValues,
-        Role:        role,
-        IsAdmin:     editValues.IsAdmin || editValues.IsSuperAdmin,
+        Role:         role,
+        IsAdmin:      editValues.IsAdmin || editValues.IsSuperAdmin,
         IsSuperAdmin: editValues.IsSuperAdmin,
-        TenantId:    tenantId, // always ensure TenantId is set
+        TenantId:     tenantId, // always ensure TenantId is set
       };
 
       if (editValues.IsAffiliate && !selectedUser.AffiliateId)
@@ -240,24 +328,131 @@ export default function Users() {
       });
       setOpenEdit(false);
     } catch (err) {
-      console.error(err);
       toast({ title: "Update failed", variant: "destructive" });
     }
   };
 
   // ── Delete ────────────────────────────────────────────────────────────────
-  const handleDeleteUser = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this user?")) return;
+  const resetCreateForm = () => {
+    setCreateValues({
+      Name: "",
+      Email: "",
+      Phone: "",
+      Country: "",
+      Address: "",
+      City: "",
+      PostalCode: "",
+      Password: "",
+      IsAdmin: false,
+      IsAffiliate: false,
+      IsSuperAdmin: false,
+    });
+  };
+
+  const handleOpenCreate = () => {
+    resetCreateForm();
+    setOpenCreate(true);
+  };
+
+  const handleCreateUser = async () => {
+    if (!createValues.Email.trim()) {
+      toast({ title: "Email required", variant: "destructive" });
+      return;
+    }
+    if (!createValues.Password.trim()) {
+      toast({ title: "Password required", variant: "destructive" });
+      return;
+    }
+    if (createValues.Password.length < 8) {
+      toast({ title: "Password too short", description: "Password must be at least 8 characters.", variant: "destructive" });
+      return;
+    }
+
+    const userId = generateUserId();
+    const role = createValues.IsSuperAdmin
+      ? "SuperAdmin"
+      : createValues.IsAdmin
+      ? "Admin"
+      : "user";
+
+    const createData: UserRecord & {
+      TenantID: string;
+      CreatedAt: string;
+      IsBanned: boolean;
+    } = {
+      UserID:       userId,
+      Name:         createValues.Name || createValues.Email,
+      Email:        createValues.Email.trim(),
+      Phone:        createValues.Phone.trim() || null,
+      Country:      createValues.Country.trim() || null,
+      Address:      createValues.Address.trim() || null,
+      City:         createValues.City.trim() || null,
+      PostalCode:   createValues.PostalCode.trim() || null,
+      IsAdmin:      createValues.IsAdmin || createValues.IsSuperAdmin,
+      IsSuperAdmin: createValues.IsSuperAdmin,
+      IsAffiliate:  createValues.IsAffiliate,
+      TenantId:     tenantId,
+      TenantID:     tenantId,
+      CreatedAt:    new Date().toISOString(),
+      Role:         role,
+      IsBanned:     false,
+    };
+
+    if (createValues.IsAffiliate) {
+      createData.AffiliateId = generateAffiliateId();
+    }
+
     try {
-      await deleteDoc(doc(db, "Users", id));
-      const updated = users.filter((u) => u.id !== id);
+      // First create the Firebase Auth user
+      const auth = getAuth();
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        createValues.Email.trim(),
+        createValues.Password
+      );
+
+      // Then create the Firestore record with the Firebase Auth UID
+      createData.UserID = userCredential.user.uid;
+
+      await setDoc(doc(db, "Users", userCredential.user.uid), createData);
+      const newUsers = [{ id: userCredential.user.uid, ...createData }, ...users];
+      setUsers(newUsers);
+      localStorage.setItem(CACHE_KEY, JSON.stringify(newUsers));
+      toast({ title: "User created", description: `${createData.Email} has been added and can now log in.` });
+      setOpenCreate(false);
+    } catch (err: unknown) {
+      const error = err as { code?: string; message?: string };
+      const errorMessage = error?.code === "auth/email-already-in-use"
+        ? "A user with this email already exists."
+        : error?.code === "auth/invalid-email"
+        ? "Please enter a valid email address."
+        : error?.code === "auth/weak-password"
+        ? "Password is too weak. Please choose a stronger password."
+        : error?.message || "Failed to create user.";
+      toast({ title: "Create failed", description: errorMessage, variant: "destructive" });
+    }
+  };
+
+  const handleOpenDeleteConfirm = (user: UserRecord) => {
+    setDeleteTarget(user);
+    setOpenDeleteConfirm(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteDoc(doc(db, "Users", deleteTarget.id));
+      const updated = users.filter((u) => u.id !== deleteTarget.id);
       setUsers(updated);
       localStorage.setItem(CACHE_KEY, JSON.stringify(updated));
       toast({ title: "User deleted" });
+      setOpenDeleteConfirm(false);
+      setDeleteTarget(null);
     } catch (err) {
       toast({ title: "Delete failed", variant: "destructive" });
     }
   };
+
 
   // ── No tenant guard ───────────────────────────────────────────────────────
   if (!tenantId) {
@@ -281,9 +476,14 @@ export default function Users() {
             {activeTenant?.Name} · <span className="font-mono">TenantId: {tenantId}</span>
           </p>
         </div>
-        <Button onClick={() => fetchUsers({ silent: false })} disabled={loading} className="w-full sm:w-auto">
-          {loading ? "Refreshing..." : "Refresh"}
-        </Button>
+        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Button onClick={handleOpenCreate} variant="secondary" className="w-full sm:w-auto">
+            Create User
+          </Button>
+          <Button onClick={() => fetchUsers({ silent: false })} disabled={loading} className="w-full sm:w-auto">
+            {loading ? "Refreshing..." : "Refresh"}
+          </Button>
+        </div>
       </div>
 
       {/* Search */}
@@ -308,16 +508,17 @@ export default function Users() {
       <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
         <div className="flex gap-2 border-b pb-2 min-w-max md:min-w-0">
           {([
-            { key: "all",        label: "All Users",     color: "bg-blue-600"   },
+            { key: "all",        label: "All Users",     color: "", style: { backgroundColor: "var(--admin-primary)" }   },
             { key: "admins",     label: "Admins",        color: "bg-purple-600" },
-            { key: "affiliates", label: "Affiliates",    color: "bg-green-600"  },
+            { key: "affiliates", label: "Affiliates",    color: "", style: { backgroundColor: "var(--admin-accent)" }  },
             { key: "users",      label: "Regular Users", color: "bg-gray-600"   },
             { key: "banned",     label: "Banned",        color: "bg-red-600"    },
-          ] as const).map(({ key, label, color }) => (
+          ] as const).map(({ key, label, color, style }) => (
             <button key={key}
               onClick={() => { setActiveCategory(key); setSearchQuery(""); }}
               className={`px-3 md:px-4 py-2 rounded-t-lg font-medium transition-colors text-sm md:text-base whitespace-nowrap
-                ${activeCategory === key ? `${color} text-white` : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>
+                ${activeCategory === key ? `${color} text-white` : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+              style={activeCategory === key && style ? style : {}}>
               {label} ({counts[key]})
               {key === "banned" && counts.banned > 0 && activeCategory !== "banned" && (
                 <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold bg-red-500 text-white rounded-full">!</span>
@@ -337,12 +538,32 @@ export default function Users() {
         </CardHeader>
         <CardContent>
           {loading && users.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3 text-gray-500">
-              <svg className="animate-spin h-8 w-8 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-              </svg>
-              <p className="text-sm">Loading users for {activeTenant?.Name}…</p>
+            <div className="overflow-x-auto -mx-4 md:mx-0">
+              <table className="w-full border rounded-lg animate-pulse">
+                <thead>
+                  <tr style={{ fontSize: "13px", background: "#0e172a", color: "#fff" }}>
+                    <th className="p-2 md:p-3 text-left whitespace-nowrap">Name</th>
+                    <th className="p-2 md:p-3 text-left whitespace-nowrap">Email</th>
+                    <th className="p-2 md:p-3 text-left whitespace-nowrap hidden lg:table-cell">Country</th>
+                    <th className="p-2 md:p-3 text-left whitespace-nowrap hidden xl:table-cell">Phone</th>
+                    <th className="p-2 md:p-3 text-left whitespace-nowrap">Status</th>
+                    <th className="p-2 md:p-3 text-left whitespace-nowrap hidden md:table-cell">Affiliate ID</th>
+                    <th className="p-2 md:p-3 text-left whitespace-nowrap hidden xl:table-cell">Joined</th>
+                    <th className="p-2 md:p-3 text-right whitespace-nowrap">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.from({ length: 6 }).map((_, idx) => (
+                    <tr key={idx} className="border-b bg-white">
+                      {Array.from({ length: 8 }).map((__, cellIndex) => (
+                        <td key={cellIndex} className="p-3">
+                          <div className="h-4 rounded bg-slate-200"></div>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <div className="overflow-x-auto -mx-4 md:mx-0">
@@ -352,11 +573,12 @@ export default function Users() {
                     <tr style={{ fontSize: "13px", background: "#0e172a", color: "#fff" }}>
                       <th className="p-2 md:p-3 text-left whitespace-nowrap">Name ↑</th>
                       <th className="p-2 md:p-3 text-left whitespace-nowrap">Email</th>
+                      <th className="p-2 md:p-3 text-left whitespace-nowrap hidden sm:table-cell">UserID</th>
                       <th className="p-2 md:p-3 text-left whitespace-nowrap hidden lg:table-cell">Country</th>
                       <th className="p-2 md:p-3 text-left whitespace-nowrap hidden xl:table-cell">Phone</th>
                       <th className="p-2 md:p-3 text-left whitespace-nowrap">Status</th>
                       <th className="p-2 md:p-3 text-left whitespace-nowrap hidden md:table-cell">Affiliate ID</th>
-                      <th className="p-2 md:p-3 text-left whitespace-nowrap hidden xl:table-cell">Joined</th>
+                      <th className="p-2 md:p-3 text-left whitespace-nowrap hidden xl:table-cell">TenantID</th>
                       <th className="p-2 md:p-3 text-right whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
@@ -375,6 +597,7 @@ export default function Users() {
                         <td className="p-2 md:p-3">
                           <div className="max-w-[180px] md:max-w-none truncate">{user.Email || user.UserID || "-"}</div>
                         </td>
+                        <td className="p-2 md:p-3 hidden sm:table-cell font-mono text-[11px] text-slate-600 truncate max-w-[120px]">{user.UserID || "-"}</td>
                         <td className="p-2 md:p-3 hidden lg:table-cell">{user.Country || "-"}</td>
                         <td className="p-2 md:p-3 hidden xl:table-cell">{user.Phone || "-"}</td>
                         <td className="p-2 md:p-3">
@@ -385,7 +608,7 @@ export default function Users() {
                               </span>
                             )}
                             {(user.IsSuperAdmin || user.Role === "SuperAdmin") && (
-                              <span className="inline-block px-1.5 py-0.5 text-[10px] md:text-xs rounded bg-indigo-100 text-indigo-800 whitespace-nowrap">
+                              <span className="inline-block px-1.5 py-0.5 text-[10px] md:text-xs rounded whitespace-nowrap" style={{ backgroundColor: "var(--admin-primary-20)", color: "var(--admin-primary)" }}>
                                 SuperAdmin
                               </span>
                             )}
@@ -410,19 +633,19 @@ export default function Users() {
                           {user.AffiliateId || "-"}
                         </td>
                         <td className="p-2 md:p-3 text-xs text-gray-500 hidden xl:table-cell whitespace-nowrap">
-                          {formatDate(user.CreatedAt)}
+                          {user.TenantId || user.TenantID || "-"}
                         </td>
                         <td className="p-2 md:p-3 text-right">
                           <div className="flex flex-col sm:flex-row gap-1 sm:gap-2 justify-end">
                             <Button variant="outline" size="sm" onClick={() => handleOpenEdit(user)} className="text-xs">Edit</Button>
                             {user.IsBanned ? (
-                              <Button variant="outline" size="sm" onClick={() => handleUnbanUser(user)}
+                              <Button variant="outline" size="sm" onClick={() => handleOpenUnbanConfirm(user)}
                                 className="text-xs border-green-500 text-green-700 hover:bg-green-50">Unban</Button>
                             ) : (
                               <Button variant="outline" size="sm" onClick={() => handleOpenBan(user)}
                                 className="text-xs border-orange-400 text-orange-700 hover:bg-orange-50">Ban</Button>
                             )}
-                            <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(user.id)} className="text-xs">Delete</Button>
+                            <Button variant="destructive" size="sm" onClick={() => handleOpenDeleteConfirm(user)} className="text-xs">Delete</Button>
                           </div>
                         </td>
                       </tr>
@@ -440,6 +663,52 @@ export default function Users() {
         </CardContent>
       </Card>
 
+      {/* Unban Confirmation Modal */}
+      <Dialog open={openUnbanConfirm} onOpenChange={setOpenUnbanConfirm}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg text-green-700">✅ Unban User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-sm text-green-800">
+                Are you sure you want to unban <strong>{unbanTarget?.Name || unbanTarget?.Email}</strong>?
+                They will be able to log in again.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="secondary" onClick={() => setOpenUnbanConfirm(false)} className="w-full sm:w-auto">Cancel</Button>
+            <Button onClick={handleUnbanUser} style={{ backgroundColor: "var(--admin-accent)" }} className="w-full sm:w-auto text-white">
+              Confirm Unban
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={openDeleteConfirm} onOpenChange={setOpenDeleteConfirm}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg text-red-700">🗑️ Delete User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">
+                Are you sure you want to delete <strong>{deleteTarget?.Name || deleteTarget?.Email}</strong>?
+                This action cannot be undone.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="secondary" onClick={() => setOpenDeleteConfirm(false)} className="w-full sm:w-auto">Cancel</Button>
+            <Button onClick={handleDeleteUser} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white">
+              Delete User
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Ban Modal */}
       <Dialog open={openBan} onOpenChange={setOpenBan}>
         <DialogContent className="max-w-[95vw] sm:max-w-md">
@@ -449,22 +718,95 @@ export default function Users() {
           <div className="space-y-4">
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
               <p className="text-sm text-red-800">
-                You are about to ban <strong>{banTarget?.Name || banTarget?.Email}</strong>.
-                They will be blocked from logging in and shown your reason.
+                Are you sure you want to ban <strong>{banTarget?.Name || banTarget?.Email}</strong>?
+                They will be unable to log in until unbanned.
               </p>
             </div>
             <div>
-              <Label className="text-sm font-semibold">Reason <span className="text-red-500">*</span></Label>
-              <textarea value={banReason} onChange={(e) => setBanReason(e.target.value)}
-                placeholder="e.g. Violation of terms of service…" rows={3}
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none" />
+              <Label htmlFor="banReason">Reason for ban (required)</Label>
+              <Input id="banReason" value={banReason} onChange={(e) => setBanReason(e.target.value)} placeholder="e.g. Violation of terms" />
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="secondary" onClick={() => setOpenBan(false)} className="w-full sm:w-auto">Cancel</Button>
             <Button onClick={handleBanUser} disabled={banLoading} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white">
-              {banLoading ? "Banning..." : "Confirm Ban"}
+              {banLoading ? "Banning..." : "Ban User"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create User Modal */}
+      <Dialog open={openCreate} onOpenChange={setOpenCreate}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg">Create User</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3">
+              <div>
+                <Label>Email</Label>
+                <Input value={createValues.Email} onChange={(e) => setCreateValues({ ...createValues, Email: e.target.value })} placeholder="user@example.com" />
+              </div>
+              <div>
+                <Label>Password</Label>
+                <Input type="password" value={createValues.Password} onChange={(e) => setCreateValues({ ...createValues, Password: e.target.value })} placeholder="Minimum 8 characters" />
+              </div>
+              <div>
+                <Label>Name</Label>
+                <Input value={createValues.Name} onChange={(e) => setCreateValues({ ...createValues, Name: e.target.value })} placeholder="Optional" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <Label>Phone</Label>
+                  <Input value={createValues.Phone} onChange={(e) => setCreateValues({ ...createValues, Phone: e.target.value })} placeholder="Optional" />
+                </div>
+                <div>
+                  <Label>Country</Label>
+                  <Input value={createValues.Country} onChange={(e) => setCreateValues({ ...createValues, Country: e.target.value })} placeholder="Optional" />
+                </div>
+              </div>
+              <div>
+                <Label>Address</Label>
+                <Input value={createValues.Address} onChange={(e) => setCreateValues({ ...createValues, Address: e.target.value })} placeholder="Optional" />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <Label>City</Label>
+                  <Input value={createValues.City} onChange={(e) => setCreateValues({ ...createValues, City: e.target.value })} placeholder="Optional" />
+                </div>
+                <div>
+                  <Label>Postal Code</Label>
+                  <Input value={createValues.PostalCode} onChange={(e) => setCreateValues({ ...createValues, PostalCode: e.target.value })} placeholder="Optional" />
+                </div>
+              </div>
+            </div>
+            <div className="border-t pt-3 space-y-2">
+              <Label className="font-semibold">Permissions</Label>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="createSuperAdmin" checked={createValues.IsSuperAdmin}
+                  onChange={(e) => setCreateValues({ ...createValues, IsSuperAdmin: e.target.checked, IsAdmin: e.target.checked || createValues.IsAdmin })}
+                  className="h-4 w-4" />
+                <Label htmlFor="createSuperAdmin" className="cursor-pointer">Super Administrator</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="createAdmin" checked={createValues.IsAdmin}
+                  onChange={(e) => setCreateValues({ ...createValues, IsAdmin: e.target.checked })}
+                  className="h-4 w-4" />
+                <Label htmlFor="createAdmin" className="cursor-pointer">Administrator</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="createAffiliate" checked={createValues.IsAffiliate}
+                  onChange={(e) => setCreateValues({ ...createValues, IsAffiliate: e.target.checked })}
+                  className="h-4 w-4" />
+                <Label htmlFor="createAffiliate" className="cursor-pointer">Affiliate</Label>
+              </div>
+              <p className="text-xs text-slate-500">A user account will be created with email/password authentication. The user will be able to log in immediately.</p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="secondary" onClick={() => setOpenCreate(false)} className="w-full sm:w-auto">Cancel</Button>
+            <Button onClick={handleCreateUser} className="w-full sm:w-auto">Create User</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -482,7 +824,7 @@ export default function Users() {
               </div>
             )}
             {/* Tenant badge */}
-            <div className="p-2 bg-indigo-50 border border-indigo-100 rounded-lg text-xs text-indigo-700">
+            <div className="p-2 border rounded-lg text-xs" style={{ backgroundColor: "var(--admin-primary-10)", borderColor: "var(--admin-primary-20)", color: "var(--admin-primary)" }}>
               <span className="font-semibold">Tenant: </span>{activeTenant?.Name}
               <span className="ml-2 font-mono opacity-60">{tenantId}</span>
             </div>
@@ -513,7 +855,6 @@ export default function Users() {
                 <Input value={editValues.PostalCode} onChange={(e) => setEditValues({ ...editValues, PostalCode: e.target.value })} /></div>
             </div>
 
-            {/* Permissions — Role field kept in sync so onSnapshot fires */}
             <div className="border-t pt-3 space-y-2">
               <Label className="font-semibold">Permissions</Label>
               <div className="flex items-center gap-2">
@@ -543,13 +884,6 @@ export default function Users() {
                   </p>
                 </div>
               )}
-              {/* Role preview */}
-              <div className="mt-1 p-2 bg-slate-50 rounded border border-slate-200">
-                <p className="text-xs text-slate-600">
-                  <span className="font-semibold">Role will be saved as: </span>
-                  <span className="font-mono">{editValues.IsSuperAdmin ? "SuperAdmin" : editValues.IsAdmin ? "Admin" : "user"}</span>
-                </p>
-              </div>
             </div>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">

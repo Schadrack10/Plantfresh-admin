@@ -479,9 +479,9 @@ const CheckoutPreview = ({ cfg }: any) => (
     <p className="text-xs font-semibold text-slate-600 mb-3">Payment Methods</p>
     <div className="flex flex-wrap gap-2">
       {cfg?.EnablePaystack && (
-        <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="w-3 h-3 rounded-full bg-blue-500" />
-          <span className="text-xs font-medium text-blue-700">Paystack</span>
+        <div className="flex items-center gap-1.5 px-3 py-2 border rounded-lg" style={{ backgroundColor: "var(--admin-primary-10)", borderColor: "var(--admin-primary-20)" }}>
+          <div className="w-3 h-3 rounded-full" style={{ backgroundColor: "var(--admin-primary)" }} />
+          <span className="text-xs font-medium" style={{ color: "var(--admin-primary)" }}>Paystack</span>
         </div>
       )}
       {cfg?.EnablePaypal && (

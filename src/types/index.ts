@@ -98,6 +98,34 @@ export interface CreateUserData {
   Role: Role;
 }
 
+export interface OrderItem {
+  ProductName?: string;
+  name?: string;
+  Image?: string;
+  image?: string;
+  Price?: number;
+  price?: number;
+  Quantity?: number;
+  quantity?: number;
+}
+
+export interface Order {
+  id?: string;
+  OrderID?: string;
+  UserID: string;
+  TenantId: string;
+  Items?: OrderItem[];
+  Products?: OrderItem[];
+  Total: number;
+  Status?: string;
+  CreatedAt?: Date | { seconds: number } | { toDate: () => Date };
+  PurchaseDate?: string;
+  ShippingAddress?: string;
+  PaymentMethod?: string;
+  orderType?: string;
+  isAffiliateOrder?: boolean;
+}
+
 export interface UpdateSiteData {
   Theme?: Partial<Theme>;
   Pages?: Page[];

@@ -350,7 +350,7 @@ export default function Tenants() {
       {/* Tenant list */}
       {loadingTenants ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+          <Loader2 className="w-8 h-8 animate-spin" style={{ color: "var(--admin-primary)" }} />
         </div>
       ) : tenants.length === 0 ? (
         <Card>
@@ -513,7 +513,7 @@ export default function Tenants() {
         <DialogContent className="max-w-[95vw] sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="w-5 h-5 text-indigo-600" />
+              <UserPlus className="w-5 h-5" style={{ color: "var(--admin-primary)" }} />
               Create tenant admin account
             </DialogTitle>
           </DialogHeader>

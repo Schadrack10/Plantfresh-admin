@@ -24,12 +24,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Tenant admins (non-SuperAdmin) always land in their builder
-    if (!isSuperAdmin && tenantId) {
-      const alreadyInBuilder = location.pathname.startsWith("/builder/");
-      if (!alreadyInBuilder) {
-        navigate(`/builder/${tenantId}`, { replace: true });
-      }
+    // Tenant admins (non-SuperAdmin) should only be redirected to their
+    // builder from the root landing page. If they intentionally visit other
+    // admin pages, allow those routes to render normally.
+    if (!isSuperAdmin && tenantId && location.pathname === "/") {
+      navigate(`/builder/${tenantId}`, { replace: true });
     }
   }, [user, isAuthed, isSuperAdmin, tenantId, location.pathname]);
 

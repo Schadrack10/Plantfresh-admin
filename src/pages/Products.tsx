@@ -9,6 +9,9 @@ import AppContext from "../context/AppContext";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { AlertCircle, Loader2, Upload } from "lucide-react";
@@ -26,6 +29,9 @@ export default function Products() {
   const [bulkData, setBulkData] = useState<any[]>([]);
   const [bulkUploading, setBulkUploading] = useState(false);
   const [imgUploading, setImgUploading] = useState(false);
+
+  // Confirmation dialog state
+  const [openDeleteConfirm, setOpenDeleteConfirm] = useState(false);
 
   // ── Search product scoped to tenant ──────────────────────────────────────
   const searchProduct = async () => {
@@ -70,13 +76,17 @@ export default function Products() {
   };
 
   // ── Delete product ────────────────────────────────────────────────────────
+  const handleOpenDeleteConfirm = () => {
+    setOpenDeleteConfirm(true);
+  };
+
   const deleteProductAction = async () => {
     if (!product || !db) return;
-    if (!confirm("Are you sure you want to delete this product?")) return;
     try {
       await deleteDoc(doc(db, "Products", product.id));
       setProduct(null);
       toast({ title: "Product deleted" });
+      setOpenDeleteConfirm(false);
     } catch (err) {
       toast({ title: "Delete failed", variant: "destructive" });
     }
@@ -274,14 +284,14 @@ export default function Products() {
                 <Input value={product.Status || ""} onChange={(e) => setProduct({ ...product, Status: e.target.value })} /></div>
 
               {/* Tenant info (read-only) */}
-              <div className="p-2 bg-indigo-50 border border-indigo-100 rounded text-xs text-indigo-700">
+              <div className="p-2 rounded text-xs" style={{ backgroundColor: "var(--admin-primary-10)", borderColor: "var(--admin-primary-20)", borderWidth: "1px", borderStyle: "solid", color: "var(--admin-primary)" }}>
                 <span className="font-semibold">Tenant: </span>{product.TenantName || activeTenant?.Name}
                 <span className="ml-2 font-mono opacity-60">{product.TenantId}</span>
               </div>
 
               <div className="flex gap-3">
                 <Button onClick={updateProduct}>Save Changes</Button>
-                <Button variant="destructive" onClick={deleteProductAction}>Delete Product</Button>
+                <Button variant="destructive" onClick={handleOpenDeleteConfirm}>Delete Product</Button>
               </div>
             </div>
           )}
@@ -344,6 +354,29 @@ export default function Products() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Delete Product Confirmation Modal */}
+      <Dialog open={openDeleteConfirm} onOpenChange={setOpenDeleteConfirm}>
+        <DialogContent className="max-w-[95vw] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-lg text-red-700">🗑️ Delete Product</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-sm text-red-800">
+                Are you sure you want to delete <strong>{product?.ProductTitle || product?.ProductID}</strong>?
+                This action cannot be undone.
+              </p>
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button variant="secondary" onClick={() => setOpenDeleteConfirm(false)} className="w-full sm:w-auto">Cancel</Button>
+            <Button onClick={deleteProductAction} className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white">
+              Delete Product
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -100,12 +100,12 @@ export default function Dashboard() {
           effectiveTenantId
             ? [
                 { title: "Products",   value: productCount, icon: Package,     color: "text-blue-600",   bg: "bg-blue-50"   },
-                { title: "Users",      value: userCount,    icon: Users,        color: "text-indigo-600", bg: "bg-indigo-50" },
+                { title: "Users",      value: userCount,    icon: Users,        color: "", bg: "", style: { color: "var(--admin-primary)", backgroundColor: "var(--admin-primary-10)" } },
                 { title: "Orders",     value: orderCount,   icon: ShoppingCart, color: "text-green-600",  bg: "bg-green-50"  },
                 { title: "Blog Posts", value: blogCount,    icon: FileText,     color: "text-purple-600", bg: "bg-purple-50" },
               ]
             : [
-                { title: "Total Tenants", value: tenantCount,  icon: Globe,        color: "text-indigo-600", bg: "bg-indigo-50" },
+                { title: "Total Tenants", value: tenantCount,  icon: Globe,        color: "", bg: "", style: { color: "var(--admin-primary)", backgroundColor: "var(--admin-primary-10)" } },
                 { title: "Products",      value: productCount, icon: Package,      color: "text-blue-600",   bg: "bg-blue-50"   },
                 { title: "Users",         value: userCount,    icon: Users,        color: "text-green-600",  bg: "bg-green-50"  },
                 { title: "Platform",      value: platformName, icon: TrendingUp,   color: "text-purple-600", bg: "bg-purple-50" },
@@ -142,7 +142,7 @@ export default function Dashboard() {
 
         {activeTenant && (
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
+            <span className="px-3 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "var(--admin-primary-20)", color: "var(--admin-primary)" }}>
               Active: {activeTenant.Name}
             </span>
           </div>
@@ -163,8 +163,8 @@ export default function Dashboard() {
                   <CardTitle className="text-xs sm:text-sm font-medium text-slate-500 truncate">
                     {stat.title}
                   </CardTitle>
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${stat.bg}`}>
-                    <stat.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${stat.color}`} />
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${stat.bg}`} style={stat.style}>
+                    <stat.icon className={`h-4 w-4 sm:h-5 sm:w-5 ${stat.color}`} style={stat.style} />
                   </div>
                 </CardHeader>
                 <CardContent className="pb-4 px-4">
@@ -226,11 +226,7 @@ export default function Dashboard() {
             <p className="text-xs text-slate-400">{currentUser?.role || "Admin"}</p>
           </div>
           <div className="ml-auto flex-shrink-0">
-            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
-              currentUser?.role === "SuperAdmin"
-                ? "bg-purple-100 text-purple-700"
-                : "bg-blue-100 text-blue-700"
-            }`}>
+            <span className="px-2.5 py-1 rounded-full text-xs font-semibold" style={{ backgroundColor: "var(--admin-primary-20)", color: "var(--admin-primary)" }}>
               {currentUser?.role || "Admin"}
             </span>
           </div>

@@ -306,7 +306,7 @@ export default function Affiliation() {
                 <Input type="number" value={tempRate} onChange={(e) => setTempRate(Number(e.target.value))}
                   className="w-16 px-2 py-1 h-8" min="0" max="100" />
                 <span className="font-bold">%</span>
-                <Button onClick={updateCommissionRate} size="sm" className="bg-green-500 hover:bg-green-600 h-8 w-8 p-0">
+                <Button onClick={updateCommissionRate} size="sm" style={{ backgroundColor: "var(--admin-accent)" }} className="h-8 w-8 p-0">
                   <Save className="w-3.5 h-3.5" />
                 </Button>
                 <Button onClick={() => { setTempRate(globalCommissionRate); setIsEditingRate(false); }}
@@ -316,8 +316,8 @@ export default function Affiliation() {
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <span className="text-xl font-bold text-blue-600">{globalCommissionRate}%</span>
-                <Button onClick={() => setIsEditingRate(true)} size="sm" className="bg-blue-500 hover:bg-blue-600 h-8 w-8 p-0">
+                <span className="text-xl font-bold" style={{ color: "var(--admin-primary)" }}>{globalCommissionRate}%</span>
+                <Button onClick={() => setIsEditingRate(true)} size="sm" style={{ backgroundColor: "var(--admin-btn-bg)", color: "var(--admin-btn-text)" }} className="h-8 w-8 p-0">
                   <Edit2 className="w-3.5 h-3.5" />
                 </Button>
               </div>
@@ -329,10 +329,10 @@ export default function Affiliation() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
         {[
-          { label: 'Total Affiliates',   value: stats.totalAffiliates,                     icon: <Users className="h-4 w-4 text-blue-600" />,         color: '' },
+          { label: 'Total Affiliates',   value: stats.totalAffiliates,                     icon: <Users className="h-4 w-4" style={{ color: "var(--admin-primary)" }} />,         color: '' },
           { label: 'Total Sales',        value: stats.totalSales,                          icon: <ShoppingCart className="h-4 w-4 text-purple-600" />, color: '' },
-          { label: 'Revenue',            value: `R${stats.totalRevenue.toFixed(2)}`,        icon: <DollarSign className="h-4 w-4 text-green-600" />,    color: '' },
-          { label: 'Commission Paid',    value: `R${stats.totalCommissionPaid.toFixed(2)}`, icon: <CheckCircle className="h-4 w-4 text-green-600" />,   color: 'text-green-600' },
+          { label: 'Revenue',            value: `R${stats.totalRevenue.toFixed(2)}`,        icon: <DollarSign className="h-4 w-4" style={{ color: "var(--admin-primary)" }} />,    color: '' },
+          { label: 'Commission Paid',    value: `R${stats.totalCommissionPaid.toFixed(2)}`, icon: <CheckCircle className="h-4 w-4" style={{ color: "var(--admin-primary)" }} />,   color: 'text-green-600' },
           { label: 'Pending',            value: `R${stats.totalCommissionPending.toFixed(2)}`, icon: <Clock className="h-4 w-4 text-yellow-600" />,  color: 'text-yellow-600' },
         ].map(({ label, value, icon, color }) => (
           <Card key={label} className="col-span-1">
@@ -378,13 +378,13 @@ export default function Affiliation() {
                       </div>
                     </td>
                     <td className="px-3 md:px-4 py-3">
-                      <span className="font-semibold text-green-600 text-sm">R{affiliate.totalRevenue.toFixed(2)}</span>
+                      <span className="font-semibold text-sm" style={{ color: "var(--admin-primary)" }}>R{affiliate.totalRevenue.toFixed(2)}</span>
                     </td>
                     <td className="px-3 md:px-4 py-3">
-                      <span className="font-bold text-blue-600 text-sm">R{affiliate.totalCommission.toFixed(2)}</span>
+                      <span className="font-bold text-sm" style={{ color: "var(--admin-primary)" }}>R{affiliate.totalCommission.toFixed(2)}</span>
                     </td>
                     <td className="px-3 md:px-4 py-3">
-                      <span className="text-green-600 font-semibold text-sm">R{affiliate.commissionPaid.toFixed(2)}</span>
+                      <span className="font-semibold text-sm" style={{ color: "var(--admin-primary)" }}>R{affiliate.commissionPaid.toFixed(2)}</span>
                     </td>
                     <td className="px-3 md:px-4 py-3">
                       <span className="text-yellow-600 font-semibold text-sm">R{affiliate.commissionPending.toFixed(2)}</span>
@@ -392,12 +392,12 @@ export default function Affiliation() {
                     <td className="px-3 md:px-4 py-3">
                       <div className="flex flex-col sm:flex-row gap-1.5">
                         <Button onClick={() => { setSelectedAffiliate(affiliate); setFilterStatus('all'); setShowDetailsModal(true); }}
-                          size="sm" className="bg-blue-500 hover:bg-blue-600 text-xs h-7 px-2">
+                          size="sm" style={{ backgroundColor: "var(--admin-btn-bg)", color: "var(--admin-btn-text)" }} className="text-xs h-7 px-2">
                           <Eye className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline">View</span>
                         </Button>
                         {affiliate.commissionPending > 0 && (
                           <Button onClick={() => handlePayAllPending(affiliate.id)}
-                            size="sm" className="bg-green-500 hover:bg-green-600 text-xs h-7 px-2">
+                            size="sm" style={{ backgroundColor: "var(--admin-accent)" }} className="text-xs h-7 px-2">
                             <DollarSign className="w-3.5 h-3.5 sm:mr-1" /><span className="hidden sm:inline">Pay All</span>
                           </Button>
                         )}
@@ -442,12 +442,18 @@ export default function Affiliation() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
                 {[
                   { label: 'Total Sales',       value: selectedAffiliate.totalSales,                          bg: 'bg-purple-50', color: 'text-purple-600' },
-                  { label: 'Revenue',           value: `R${selectedAffiliate.totalRevenue.toFixed(2)}`,       bg: 'bg-green-50',  color: 'text-green-600'  },
-                  { label: 'Total Commission',  value: `R${selectedAffiliate.totalCommission.toFixed(2)}`,    bg: 'bg-blue-50',   color: 'text-blue-600'   },
+                  { label: 'Revenue',           value: `R${selectedAffiliate.totalRevenue.toFixed(2)}`,       bg: '',  color: ''  },
+                  { label: 'Total Commission',  value: `R${selectedAffiliate.totalCommission.toFixed(2)}`,    bg: '',   color: ''   },
                   { label: 'Pending',           value: `R${selectedAffiliate.commissionPending.toFixed(2)}`,  bg: 'bg-yellow-50', color: 'text-yellow-600' },
                 ].map(({ label, value, bg, color }) => (
-                  <div key={label} className={`${bg} p-3 sm:p-4 rounded-xl`}>
-                    <div className={`text-xs ${color} mb-1 font-medium`}>{label}</div>
+                  <div key={label} className={`${bg} p-3 sm:p-4 rounded-xl`} style={
+                    label === 'Total Commission' ? { backgroundColor: "var(--admin-primary-10)" } :
+                    label === 'Revenue' ? { backgroundColor: "var(--admin-accent-10)" } : {}
+                  }>
+                    <div className={`text-xs ${color} mb-1 font-medium`} style={
+                      label === 'Total Commission' ? { color: "var(--admin-primary)" } :
+                      label === 'Revenue' ? { color: "var(--admin-primary)" } : {}
+                    }>{label}</div>
                     <div className="text-lg sm:text-2xl font-bold truncate">{value}</div>
                   </div>
                 ))}
@@ -456,7 +462,7 @@ export default function Affiliation() {
               {selectedAffiliate.commissionPending > 0 && (
                 <div className="mb-4 flex justify-end">
                   <Button onClick={() => handlePayAllPending(selectedAffiliate.id)}
-                    className="bg-green-500 hover:bg-green-600 w-full sm:w-auto">
+                    style={{ backgroundColor: "var(--admin-accent)" }} className="w-full sm:w-auto">
                     <DollarSign className="w-4 h-4 mr-2" />
                     Pay All Pending (R{selectedAffiliate.commissionPending.toFixed(2)})
                   </Button>
@@ -489,7 +495,7 @@ export default function Affiliation() {
                       </div>
                       <div className="text-right flex-shrink-0">
                         <div className="font-bold text-base sm:text-lg">R{sale.revenue.toFixed(2)}</div>
-                        <div className="text-xs text-blue-600 font-semibold">R{sale.commission.toFixed(2)}</div>
+                        <div className="text-xs font-semibold" style={{ color: "var(--admin-primary)" }}>R{sale.commission.toFixed(2)}</div>
                       </div>
                     </div>
 
@@ -515,7 +521,7 @@ export default function Affiliation() {
                       {sale.status === 'pending' && (
                         <Button onClick={() => handlePayCommission(selectedAffiliate, sale.id, sale.commission)}
                           disabled={processingPayment === sale.id} size="sm"
-                          className="bg-green-500 hover:bg-green-600 text-xs h-7">
+                          style={{ backgroundColor: "var(--admin-accent)" }} className="text-xs h-7">
                           {processingPayment === sale.id
                             ? <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />Processing…</>
                             : <><DollarSign className="w-3.5 h-3.5 mr-1" />Mark as Paid</>}

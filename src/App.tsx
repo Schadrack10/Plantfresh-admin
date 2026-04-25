@@ -18,6 +18,8 @@ import Templates from "./pages/Templates";
 import Builder from "./pages/Builder";
 import Signup from "./pages/Signup";
 import AdminTheme from "./pages/AdminTheme";
+import Orders from "./pages/Orders";
+import Profile from "./pages/Profile";
 
 const queryClient = new QueryClient();
 
@@ -37,10 +39,12 @@ const App = () => (
             <Route path="/templates" element={<Templates />} />
             <Route path="/builder/:tenantId" element={<Builder />} />
             <Route path="/users" element={<Users />} />
+            <Route path="/orders" element={<Orders />} />
             <Route path="/products" element={<Products />} />
             <Route path="/blog" element={<Blog />} />
             <Route path="/affiliation" element={<Affiliation />} />
             <Route path="/admin-theme" element={<AdminTheme />} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
           <Route path="*" element={<NotFound />} />
         </Routes>
